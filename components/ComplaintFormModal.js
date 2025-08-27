@@ -8,7 +8,10 @@ import ImageUploads from './ImageUploads';
 import Swal from 'sweetalert2';
 import { z } from 'zod';
 import Image from 'next/image';
-const LocationConfirm = dynamic(() => import('./LocationConfirm'), { ssr: false });
+const LocationConfirm = dynamic(() => import('./LocationConfirm'), { 
+  ssr: false,
+  loading: () => <div className="h-64 bg-gray-100 rounded flex items-center justify-center">กำลังโหลดแผนที่...</div>
+});
 
 const schema = z.object({
   community: z.string().min(1, 'กรุณาระบุ 1 ชุมชน'),

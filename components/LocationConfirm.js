@@ -25,19 +25,23 @@ const LocationConfirm = ({
   formSubmitted,
 }) => {
   const [loading, setLoading] = useState(false);
+  const [mapError, setMapError] = useState(false);
   const { BaseLayer } = LayersControl;
 
   useEffect(() => {
     if (useCurrent) {
       setLoading(true);
+      setMapError(false); // Reset map error when getting new location
+      console.log("🌍 Getting current location...");
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const { latitude, longitude } = pos.coords;
+          console.log("📍 Location obtained:", { lat: latitude, lng: longitude });
           setLocation({ lat: latitude, lng: longitude });
           setLoading(false);
         },
         (err) => {
-          console.error("Geolocation error:", err);
+          console.error("❌ Geolocation error:", err);
           alert("ไม่สามารถเข้าถึงตำแหน่งของคุณได้");
           setLoading(false);
           onToggle(false); // ปิด toggle กลับ
@@ -45,6 +49,12 @@ const LocationConfirm = ({
       );
     }
   }, [useCurrent, onToggle, setLocation]);
+
+  useEffect(() => {
+    if (useCurrent && location) {
+      console.log("🗺️ Map should be rendering with location:", location);
+    }
+  }, [useCurrent, location]);
 
   return (
     <div className="space-y-2">
@@ -70,19 +80,37 @@ const LocationConfirm = ({
       </div>
 
       {loading && <p className="text-sm text-gray-500">กำลังดึงตำแหน่ง...</p>}
+      
+      {useCurrent && !location && !loading && (
+        <p className="text-sm text-red-500">ไม่สามารถดึงตำแหน่งได้ กรุณาลองใหม่อีกครั้ง</p>
+      )}
 
       {useCurrent && location && (
         <div className="rounded-lg overflow-hidden border border-blue-200 shadow-sm bg-blue-50">
-          <div className="h-64 rounded overflow-hidden border">
-            <MapContainer
-              center={[location.lat, location.lng]}
-              zoom={17}
-              scrollWheelZoom={false}
-              style={{ height: "100%", width: "100%" }}
-            >
+          <div className="h-64 rounded overflow-hidden border relative">
+            {mapError ? (
+              <div className="h-full flex items-center justify-center bg-gray-100">
+                <div className="text-center">
+                  <p className="text-gray-600 mb-2">ไม่สามารถโหลดแผนที่ได้</p>
+                  <button 
+                    onClick={() => setMapError(false)}
+                    className="btn btn-sm btn-primary"
+                  >
+                    ลองใหม่
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <MapContainer
+                center={[location.lat, location.lng]}
+                zoom={17}
+                scrollWheelZoom={false}
+                style={{ height: "100%", width: "100%" }}
+                className="z-0"
+              >
               {/* 🧭 Layers Control */}
               <LayersControl
-                position="topright"
+                position="bottomleft"
                 className="custom-layers-control"
               >
                 {/* 🗺️ แผนที่ถนน */}
@@ -123,6 +151,7 @@ const LocationConfirm = ({
                 </Popup>
               </Marker>
             </MapContainer>
+            )}
           </div>
         </div>
       )}
