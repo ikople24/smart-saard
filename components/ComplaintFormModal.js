@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import CommunitySelector from './CommunitySelector';
+import SchoolSelector from './SchoolSelector';
 import ReporterInput from './ReporterInput';
 
 import { useProblemOptionStore } from '@/stores/useProblemOptionStore';
@@ -15,10 +16,12 @@ const LocationConfirm = dynamic(() => import('./LocationConfirm'), {
 
 const schema = z.object({
   community: z.string().min(1, 'กรุณาระบุ 1 ชุมชน'),
+  school: z.string().min(1, 'กรุณาเลือก 1 โรงเรียน'),
 });
 
 const ComplaintFormModal = ({ selectedLabel, onClose }) => {
   const [selectedCommunity, setSelectedCommunity] = useState('');
+  const [selectedSchool, setSelectedSchool] = useState('');
   const [prefix, setPrefix] = useState('นาย');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -45,7 +48,10 @@ useEffect(() => {
     setValidateTrigger(true);
     await new Promise((resolve) => setTimeout(resolve, 0)); // allow validation effect to run
 
-    const result = schema.safeParse({ community: selectedCommunity });
+    const result = schema.safeParse({ 
+      community: selectedLabel === 'งานการศึกษา' ? selectedSchool : selectedCommunity,
+      school: selectedLabel === 'งานการศึกษา' ? selectedSchool : selectedCommunity
+    });
     if (!result.success) {
       setFormErrors(result.error.flatten().fieldErrors);
       return;
@@ -108,7 +114,7 @@ useEffect(() => {
       prefix,
       fullName,
       phone,
-      community: selectedCommunity,
+      community: selectedLabel === 'งานการศึกษา' ? selectedSchool : selectedCommunity,
       problems: selectedProblems.map(id => {
         const match = problemOptions.find(opt => opt._id === id);
         return match ? match.label : id;
@@ -162,6 +168,7 @@ useEffect(() => {
 
   const handleClearForm = () => {
     setSelectedCommunity('');
+    setSelectedSchool('');
     setPrefix('นาย');
     setFullName('');
     setPhone('');
@@ -178,6 +185,10 @@ useEffect(() => {
 
   const handleCommunitySelect = (community) => {
     setSelectedCommunity(community);
+  };
+
+  const handleSchoolSelect = (school) => {
+    setSelectedSchool(school);
   };
 
   useEffect(() => {
@@ -208,11 +219,19 @@ useEffect(() => {
           </button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
-          <CommunitySelector
-            selected={selectedCommunity}
-            onSelect={handleCommunitySelect}
-            error={formErrors.community?.[0]}
-          />
+          {selectedLabel === 'งานการศึกษา' ? (
+            <SchoolSelector
+              selected={selectedSchool}
+              onSelect={handleSchoolSelect}
+              error={formErrors.school?.[0]}
+            />
+          ) : (
+            <CommunitySelector
+              selected={selectedCommunity}
+              onSelect={handleCommunitySelect}
+              error={formErrors.community?.[0]}
+            />
+          )}
           <div>
             <p className="font-semibold text-sm text-gray-700">2.เลือกรายการปัญหา</p>
             <div className="flex flex-wrap gap-2 mt-2">

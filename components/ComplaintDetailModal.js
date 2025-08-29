@@ -341,7 +341,7 @@ export default function ComplaintDetailModal({ complaint, isOpen, onClose, assig
                     <div className="flex items-center justify-between">
                       <div>
                         <span className="text-sm font-medium text-gray-700">ชื่อ:</span>
-                        <span className="text-sm text-gray-900 ml-2">{reporterInfo.fullName}</span>
+                        <span className="text-sm text-gray-900 ml-2">{reporterInfo.prefix} {reporterInfo.fullName}</span>
                       </div>
                       {reporterInfo.phone && (
                         <button
