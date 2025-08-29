@@ -14,7 +14,7 @@ export default async function handler(req, res) {
 
   try {
     const report = await SubmittedReport.findById(id).select(
-      "fullName phone location"
+      "prefix fullName phone location community"
     );
 
     if (!report) {

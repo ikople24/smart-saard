@@ -62,7 +62,7 @@ export default function EditUserModal({ isOpen, onClose, complaint }) {
                 <span className="font-mono">{complaint?._id}</span>
               </p>
               <p className="text-lg font-semibold">
-                ชื่อผู้แจ้ง 👤 : {reporterInfo.fullName}
+                ชื่อผู้แจ้ง 👤 : {reporterInfo.prefix} {reporterInfo.fullName}
               </p>
               <p className="text-lg">เบอร์โทร 📞 : {reporterInfo.phone}</p>
               <p className="text-lg">

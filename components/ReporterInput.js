@@ -75,6 +75,12 @@ const ReporterInput = ({
               <option value="น.ส." className="text-orange-700">
                 น.ส.
               </option>
+              <option value="ด.ช." className="text-orange-700">
+                ด.ช.
+              </option>
+              <option value="ด.ญ." className="text-orange-700">
+                ด.ญ.
+              </option>
             </select>
           </div>
           <div className="flex flex-1 flex-col">
