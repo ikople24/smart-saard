@@ -1,0 +1,79 @@
+{
+  "assignments": {
+    "12C007": "residential",
+    "12C009": "residential",
+    "07M004": "residential",
+    "07L008": "residential",
+    "13A001": {
+      "types": [
+        "agriculture"
+      ],
+      "areas": {
+        "agriculture": "10-3-54"
+      }
+    },
+    "07L004": {
+      "types": [
+        "agriculture",
+        "residential"
+      ],
+      "areas": {
+        "agriculture": "10-2-0",
+        "residential": "2-0-41"
+      }
+    },
+    "07L005": {
+      "types": [
+        "agriculture",
+        "residential"
+      ],
+      "areas": {
+        "agriculture": "25-0-0",
+        "residential": "0-3-45"
+      }
+    },
+    "07L006": {
+      "types": [
+        "agriculture"
+      ],
+      "areas": {
+        "agriculture": "7-0-0"
+      }
+    },
+    "07L007": {
+      "types": [
+        "agriculture"
+      ],
+      "areas": {
+        "agriculture": "2-0-3"
+      }
+    },
+    "07M010": {
+      "types": [
+        "agriculture"
+      ],
+      "areas": {
+        "agriculture": "12-3-38"
+      }
+    },
+    "13A002": {
+      "types": [
+        "agriculture",
+        "residential"
+      ],
+      "areas": {
+        "agriculture": "8-0-0",
+        "residential": "4-1-71"
+      }
+    },
+    "13A003": {
+      "types": [
+        "agriculture"
+      ],
+      "areas": {
+        "agriculture": "15-3-14"
+      }
+    }
+  },
+  "updatedAt": "2026-02-18T03:59:00.282Z"
+}
