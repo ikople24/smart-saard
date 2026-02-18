@@ -11,6 +11,7 @@
   "dependencies": {
     "@clerk/clerk-sdk-node": "^4.13.23",
     "@clerk/nextjs": "^6.20.0",
+    "@geoman-io/leaflet-geoman-free": "^2.19.2",
     "@headlessui/react": "^2.2.4",
     "@heroicons/react": "^2.2.0",
     "animejs": "^4.0.2",
@@ -24,7 +25,6 @@
     "next": "15.3.8",
     "next-cloudinary": "^6.16.0",
     "react": "^19.1.0",
-
     "react-dom": "^19.1.0",
     "react-icons": "^5.5.0",
     "react-leaflet": "^5.0.0",

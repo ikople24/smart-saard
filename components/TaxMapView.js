@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback, useMemo, useRef, forwardRef, useImperativeHandle } from 'react';
 import { MapContainer, TileLayer, GeoJSON, useMap, LayersControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import L from 'leaflet';
+import '@geoman-io/leaflet-geoman-free';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -126,6 +128,159 @@ const FitBoundsToGeoJSON = ({ geojsonData }) => {
 const buildCombinedGeoJSON = (layers) => {
   if (layers.length === 0) return null;
   return { type: 'FeatureCollection', features: layers.flatMap((l) => l.data.features || [l.data]) };
+};
+
+/* ─── Single-Feature Geometry Editor (leaflet-geoman) ─── */
+
+const SingleFeatureEditor = ({ feature, featureIndex, onCollect }) => {
+  const map = useMap();
+  const editLayerRef = useRef(null);
+
+  useEffect(() => {
+    if (!map || !feature) return;
+
+    const fg = L.featureGroup().addTo(map);
+    editLayerRef.current = fg;
+
+    const geoLayer = L.geoJSON(feature, {
+      style: () => ({
+        color: '#f59e0b',
+        weight: 3,
+        fillColor: '#fef3c7',
+        fillOpacity: 0.35,
+      }),
+      pointToLayer: (f, ll) => L.circleMarker(ll, {
+        radius: 8, fillColor: '#f59e0b', color: '#fff', weight: 2, fillOpacity: 0.8,
+      }),
+    });
+
+    geoLayer.eachLayer((l) => fg.addLayer(l));
+
+    fg.eachLayer((l) => {
+      if (l.pm) l.pm.enable({ allowSelfIntersection: false });
+    });
+
+    map.pm.setGlobalOptions({
+      allowSelfIntersection: false,
+      snappable: true,
+      snapDistance: 15,
+    });
+
+    try {
+      const b = fg.getBounds();
+      if (b.isValid()) map.fitBounds(b, { padding: [80, 80], maxZoom: 19, animate: true });
+    } catch { /* ignore */ }
+
+    return () => {
+      fg.eachLayer((l) => { if (l.pm) l.pm.disable(); });
+      map.removeLayer(fg);
+      editLayerRef.current = null;
+    };
+  }, [map, feature]);
+
+  const collectGeo = useCallback(() => {
+    const fg = editLayerRef.current;
+    if (!fg) return null;
+    let edited = null;
+    fg.eachLayer((l) => {
+      const geo = l.toGeoJSON();
+      edited = { ...geo, properties: { ...feature.properties, ...geo.properties } };
+    });
+    return { featureIndex, feature: edited };
+  }, [feature, featureIndex]);
+
+  useEffect(() => {
+    if (onCollect) onCollect.current = collectGeo;
+  }, [collectGeo, onCollect]);
+
+  return null;
+};
+
+/* ─── Draw New Feature (leaflet-geoman) ─── */
+
+const DrawNewFeature = ({ onCreated }) => {
+  const map = useMap();
+  const createdRef = useRef(null);
+
+  useEffect(() => {
+    if (!map) return;
+
+    map.pm.setGlobalOptions({
+      allowSelfIntersection: false,
+      snappable: true,
+      snapDistance: 15,
+      templineStyle: { color: '#16a34a', weight: 3 },
+      hintlineStyle: { color: '#16a34a', dashArray: '5,5', weight: 2 },
+      pathOptions: { color: '#16a34a', weight: 3, fillColor: '#bbf7d0', fillOpacity: 0.35 },
+    });
+
+    map.pm.enableDraw('Polygon', {
+      finishOn: 'dblclick',
+    });
+
+    const handleCreate = (e) => {
+      createdRef.current = e.layer;
+      const geo = e.layer.toGeoJSON();
+      map.pm.disableDraw();
+      onCreated(geo);
+    };
+
+    map.on('pm:create', handleCreate);
+
+    return () => {
+      map.pm.disableDraw();
+      map.off('pm:create', handleCreate);
+      if (createdRef.current) {
+        try { map.removeLayer(createdRef.current); } catch { /* ignore */ }
+        createdRef.current = null;
+      }
+    };
+  }, [map, onCreated]);
+
+  return null;
+};
+
+/* ─── New Feature Properties Form ─── */
+
+const NewFeaturePropsForm = ({ onSave, onCancel }) => {
+  const [parcelCode, setParcelCode] = useState('');
+  const [area, setArea] = useState('');
+
+  return (
+    <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 bg-white rounded-xl shadow-2xl border border-green-300 w-80 overflow-hidden">
+      <div className="px-4 py-3 bg-green-50 border-b border-green-200 flex items-center gap-2">
+        <span className="text-green-600 text-lg">📝</span>
+        <div>
+          <p className="text-sm font-semibold text-green-800">กรอกข้อมูลแปลงใหม่</p>
+          <p className="text-[10px] text-green-600">กรอกรหัสแปลงและเนื้อที่ (ถ้ามี)</p>
+        </div>
+      </div>
+      <div className="p-4 space-y-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">รหัสแปลง (parcel_cod)</label>
+          <input type="text" value={parcelCode} onChange={(e) => setParcelCode(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent"
+            placeholder="เช่น 1234-56-789" autoFocus />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">เนื้อที่ (ไร่-งาน-ตร.วา)</label>
+          <input type="text" value={area} onChange={(e) => setArea(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent"
+            placeholder="เช่น 12-2-41" />
+        </div>
+      </div>
+      <div className="px-4 py-3 border-t border-gray-100 flex items-center gap-2 bg-gray-50">
+        <button onClick={() => onSave({ parcel_cod: parcelCode || undefined, Area: area || undefined })}
+          className="flex-1 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors shadow">
+          💾 บันทึกแปลงใหม่
+        </button>
+        <button onClick={onCancel}
+          className="px-4 py-2 bg-gray-400 text-white text-sm font-medium rounded-lg hover:bg-gray-500 transition-colors shadow">
+          ยกเลิก
+        </button>
+      </div>
+    </div>
+  );
 };
 
 const getParcelCode = (props) =>
@@ -390,7 +545,11 @@ const LandUsePopup = ({ parcelCode, currentTypes, currentAreas, totalArea, posit
 
 /* ─────────────── Legend Panel ─────────────── */
 
-const LandUseLegend = ({ assignments, onClose }) => {
+const LandUseLegend = ({ assignments, allParcelCodes, onClose, onBulkAssign }) => {
+  const [bulkType, setBulkType] = useState('agriculture');
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [showBatch, setShowBatch] = useState(false);
+
   const stats = useMemo(() => {
     const counts = {};
     const areaWah = {};
@@ -408,15 +567,31 @@ const LandUseLegend = ({ assignments, onClose }) => {
         });
       }
     });
-    return { counts, areaWah, assigned };
-  }, [assignments]);
+    const total = allParcelCodes.length;
+    const unassigned = allParcelCodes.filter((c) => !assignments[c] || normalizeLUFull(assignments[c]).types.length === 0);
+    return { counts, areaWah, assigned, total, unassigned };
+  }, [assignments, allParcelCodes]);
+
+  const handleBulk = async (targetCodes) => {
+    if (targetCodes.length === 0) return;
+    const t = LAND_USE_MAP[bulkType];
+    const label = t ? `${t.icon} ${t.label}` : bulkType;
+    if (!window.confirm(`กำหนด "${label}" ให้ ${targetCodes.length} แปลง ที่เลือก?`)) return;
+    setBulkBusy(true);
+    try {
+      await onBulkAssign(targetCodes, bulkType);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
 
   return (
-    <div className="absolute bottom-4 right-4 z-10 bg-white rounded-lg shadow-lg border border-gray-200 w-64">
-      <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
+    <div className="absolute bottom-4 right-4 z-10 bg-white rounded-lg shadow-lg border border-gray-200 w-72 max-h-[80vh] overflow-y-auto">
+      <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-lg">
         <h4 className="text-xs font-semibold text-gray-700">สำรวจการใช้ที่ดิน</h4>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-sm">&times;</button>
       </div>
+
       <div className="p-2 space-y-1">
         {LAND_USE_TYPES.map((type) => (
           <div key={type.key} className="flex items-center gap-2 text-xs">
@@ -429,8 +604,65 @@ const LandUseLegend = ({ assignments, onClose }) => {
           </div>
         ))}
       </div>
+
       <div className="px-3 py-2 border-t border-gray-100 text-xs text-gray-500">
-        สำรวจแล้ว <span className="font-semibold text-gray-700">{stats.assigned}</span> แปลง
+        สำรวจแล้ว <span className="font-semibold text-gray-700">{stats.assigned}</span> / {stats.total} แปลง
+        {stats.unassigned.length > 0 && (
+          <span className="ml-1 text-amber-600 font-medium">(เหลือ {stats.unassigned.length})</span>
+        )}
+      </div>
+
+      {/* Batch tools */}
+      <div className="px-3 py-2 border-t border-gray-200">
+        <button onClick={() => setShowBatch(!showBatch)}
+          className="w-full text-xs text-left font-semibold text-gray-700 flex items-center justify-between hover:text-blue-600 transition-colors">
+          <span>⚡ เครื่องมือกำหนดเป็นชุด</span>
+          <span className="text-[10px]">{showBatch ? '▲' : '▼'}</span>
+        </button>
+
+        {showBatch && (
+          <div className="mt-2 space-y-2">
+            <div>
+              <label className="block text-[10px] text-gray-500 mb-1">ประเภทที่ต้องการกำหนด</label>
+              <select value={bulkType} onChange={(e) => setBulkType(e.target.value)}
+                className="w-full text-xs border border-gray-300 rounded-lg py-1.5 px-2 focus:outline-none focus:ring-1 focus:ring-green-500">
+                {LAND_USE_TYPES.map((t) => (
+                  <option key={t.key} value={t.key}>{t.icon} {t.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <button onClick={() => handleBulk(stats.unassigned)} disabled={bulkBusy || stats.unassigned.length === 0}
+              className="w-full px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
+              {bulkBusy ? '⏳ กำลังดำเนินการ...' : `🌾 กำหนดแปลงที่เหลือ (${stats.unassigned.length} แปลง)`}
+            </button>
+
+            <div className="flex gap-1.5">
+              {LAND_USE_TYPES.slice(0, 4).map((fromType) => {
+                const codesOfType = allParcelCodes.filter((c) => {
+                  const arr = normalizeLU(assignments[c]);
+                  return arr.length > 0 && arr[0] === fromType.key;
+                });
+                if (codesOfType.length === 0 || fromType.key === bulkType) return null;
+                return (
+                  <button key={fromType.key}
+                    onClick={() => {
+                      const t = LAND_USE_MAP[bulkType];
+                      const label = t ? `${t.icon} ${t.label}` : bulkType;
+                      if (!window.confirm(`เปลี่ยน "${fromType.icon} ${fromType.label}" (${codesOfType.length} แปลง) → "${label}"?`)) return;
+                      setBulkBusy(true);
+                      onBulkAssign(codesOfType, bulkType).finally(() => setBulkBusy(false));
+                    }}
+                    disabled={bulkBusy}
+                    className="flex-1 px-1 py-1.5 text-[10px] rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors disabled:opacity-40 text-center"
+                    title={`เปลี่ยน ${fromType.label} → ${LAND_USE_MAP[bulkType]?.label}`}>
+                    {fromType.icon}→{LAND_USE_MAP[bulkType]?.icon}<br /><span className="text-gray-400">{codesOfType.length}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -438,13 +670,15 @@ const LandUseLegend = ({ assignments, onClose }) => {
 
 /* ─────────────── Attribute Table ─────────────── */
 
-const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAssignments }) => {
+const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAssignments, onUpdateFeature, onDeleteFeature }) => {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [selectedRow, setSelectedRow] = useState(null);
   const [sortCol, setSortCol] = useState(null);
   const [sortAsc, setSortAsc] = useState(true);
   const [filterLandUse, setFilterLandUse] = useState('all');
+  const [editCell, setEditCell] = useState(null);
+  const [editValue, setEditValue] = useState('');
 
   const features = useMemo(() => layer?.data?.features || [], [layer]);
 
@@ -500,6 +734,36 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
     onZoomToFeature?.(feature);
   };
 
+  const startCellEdit = (featureIdx, col, currentVal, e) => {
+    e.stopPropagation();
+    setEditCell({ featureIdx, col });
+    setEditValue(currentVal != null ? String(currentVal) : '');
+  };
+
+  const commitCellEdit = () => {
+    if (!editCell) return;
+    const { featureIdx, col } = editCell;
+    const feature = features[featureIdx];
+    if (!feature) { setEditCell(null); return; }
+
+    const oldVal = feature.properties?.[col];
+    const newVal = editValue;
+
+    if (String(oldVal ?? '') !== newVal) {
+      onUpdateFeature?.(featureIdx, col, newVal);
+    }
+    setEditCell(null);
+  };
+
+  const cancelCellEdit = () => {
+    setEditCell(null);
+  };
+
+  const handleEditKeyDown = (e) => {
+    if (e.key === 'Enter') commitCellEdit();
+    else if (e.key === 'Escape') cancelCellEdit();
+  };
+
   if (!layer) return null;
 
   return (
@@ -511,6 +775,7 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
             <h3 className="text-sm font-semibold text-gray-800 truncate max-w-[200px]" title={layer.name}>{layer.name}</h3>
           </div>
           <span className="text-xs text-gray-500">{sorted.length === features.length ? `${features.length} แถว` : `${sorted.length} / ${features.length} แถว`}</span>
+          {onUpdateFeature && <span className="text-[10px] text-blue-400">ดับเบิลคลิกเพื่อแก้ไข</span>}
         </div>
         <div className="flex items-center gap-2">
           {surveyMode && (
@@ -542,7 +807,8 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
                     {col}{sortCol === col && <span className="ml-1 text-blue-500">{sortAsc ? '▲' : '▼'}</span>}
                   </th>
                 ))}
-                <th className="px-3 py-2 text-center font-semibold text-gray-600 border-b border-gray-200 w-10">📍</th>
+                <th className="px-3 py-2 text-center font-semibold text-gray-600 border-b border-r border-gray-200 w-10">📍</th>
+                {onDeleteFeature && <th className="px-3 py-2 text-center font-semibold text-gray-600 border-b border-gray-200 w-10">🗑️</th>}
               </tr>
             </thead>
             <tbody>
@@ -580,16 +846,43 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
                       </td>
                     )}
                     {columns.map((col) => {
+                      const realIdx = features.indexOf(feature);
                       const val = feature.properties?.[col];
+                      const isEditing = editCell && editCell.featureIdx === realIdx && editCell.col === col;
+
                       return (
-                        <td key={col} className="px-3 py-1.5 border-r border-gray-100 max-w-[200px] truncate" title={val != null ? String(val) : ''}>
-                          {val != null ? String(val) : <span className="text-gray-300">—</span>}
+                        <td key={col} className="px-3 py-1.5 border-r border-gray-100 max-w-[200px]"
+                          title={!isEditing ? (val != null ? String(val) : '') : undefined}
+                          onDoubleClick={(e) => onUpdateFeature && startCellEdit(realIdx, col, val, e)}>
+                          {isEditing ? (
+                            <input type="text" value={editValue} onChange={(e) => setEditValue(e.target.value)}
+                              onBlur={commitCellEdit} onKeyDown={handleEditKeyDown} autoFocus
+                              className="w-full px-1 py-0.5 text-xs border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-blue-50" />
+                          ) : (
+                            <span className={`block truncate ${onUpdateFeature ? 'cursor-text' : ''}`}>
+                              {val != null ? String(val) : <span className="text-gray-300">—</span>}
+                            </span>
+                          )}
                         </td>
                       );
                     })}
-                    <td className="px-3 py-1.5 text-center">
+                    <td className="px-3 py-1.5 text-center border-r border-gray-100">
                       <button onClick={(e) => { e.stopPropagation(); handleRowClick(feature, idx); }} className="text-blue-500 hover:text-blue-700" title="ซูมไปที่ feature">📍</button>
                     </td>
+                    {onDeleteFeature && (
+                      <td className="px-3 py-1.5 text-center">
+                        <button onClick={(e) => {
+                          e.stopPropagation();
+                          const realIdx = features.indexOf(feature);
+                          const code = getParcelCode(feature.properties);
+                          const label = code || `แปลง #${realIdx + 1}`;
+                          if (window.confirm(`ต้องการลบ "${label}" ใช่หรือไม่?`)) {
+                            onDeleteFeature(realIdx);
+                            setSelectedRow(null);
+                          }
+                        }} className="text-gray-400 hover:text-red-600 transition-colors" title="ลบแปลงนี้">🗑️</button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -635,6 +928,14 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
   const [showLegend, setShowLegend] = useState(false);
   const [popupInfo, setPopupInfo] = useState(null);
 
+  const [editingLayerId, setEditingLayerId] = useState(null);
+  const [editFeatureIdx, setEditFeatureIdx] = useState(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const editCollectRef = useRef(null);
+
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [drawnFeature, setDrawnFeature] = useState(null);
+
   const defaultCenter = [13.7563, 100.5018];
   const defaultZoom = 12;
   const tableLayer = geojsonLayers.find((l) => l.id === tableLayerId) || null;
@@ -677,6 +978,35 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
     setLandUseVersion((prev) => prev + 1);
   };
 
+  const allParcelCodes = useMemo(() => {
+    const codes = new Set();
+    geojsonLayers.forEach((ly) => {
+      (ly.data?.features || []).forEach((f) => {
+        const code = getParcelCode(f.properties);
+        if (code) codes.add(code);
+      });
+    });
+    return Array.from(codes);
+  }, [geojsonLayers]);
+
+  const bulkAssignLandUse = useCallback(async (parcelCodes, typeKey) => {
+    const bulkAssignments = {};
+    parcelCodes.forEach((code) => {
+      bulkAssignments[code] = { types: [typeKey], areas: {} };
+    });
+
+    setLandUseAssignments((prev) => ({ ...prev, ...bulkAssignments }));
+    setLandUseVersion((prev) => prev + 1);
+
+    try {
+      await fetch('/api/land-use', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignments: bulkAssignments }),
+      });
+    } catch { /* ignore */ }
+  }, []);
+
   const handleMapReady = useCallback((map) => {
     setTimeout(() => { if (map && !map._removed) { map._loaded = true; setMapInstance(map); } }, 100);
   }, []);
@@ -708,6 +1038,130 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
     } catch (err) { console.error('Error loading saved files:', err); } finally { setLoadingFiles(false); }
   };
 
+  const startEdit = (layerId) => {
+    setEditingLayerId(layerId);
+    setEditFeatureIdx(null);
+    setTableLayerId(null);
+    setSelectedFeature(null);
+    setPopupInfo(null);
+  };
+
+  const selectFeatureForEdit = (featureIdx) => {
+    setEditFeatureIdx(featureIdx);
+  };
+
+  const cancelEditFeature = () => {
+    setEditFeatureIdx(null);
+    editCollectRef.current = null;
+  };
+
+  const exitEditMode = () => {
+    setEditingLayerId(null);
+    setEditFeatureIdx(null);
+    setIsDrawing(false);
+    setDrawnFeature(null);
+    editCollectRef.current = null;
+    setMapKey((prev) => prev + 1);
+  };
+
+  const startDrawing = () => {
+    setEditFeatureIdx(null);
+    setIsDrawing(true);
+    setDrawnFeature(null);
+  };
+
+  const handleDrawCreated = useCallback((geoFeature) => {
+    setIsDrawing(false);
+    setDrawnFeature(geoFeature);
+  }, []);
+
+  const saveNewFeature = async (props) => {
+    const ly = geojsonLayers.find((l) => l.id === editingLayerId);
+    if (!ly || !drawnFeature) { setDrawnFeature(null); return; }
+
+    const cleanProps = {};
+    Object.entries(props).forEach(([k, v]) => { if (v !== undefined && v !== '') cleanProps[k] = v; });
+
+    const newFeature = { ...drawnFeature, properties: cleanProps };
+    const updatedData = {
+      ...ly.data,
+      features: [...(ly.data.features || []), newFeature],
+    };
+
+    setEditSaving(true);
+    try {
+      const saveRes = await fetch('/api/geojson', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: ly.name, data: updatedData }),
+      });
+      if (!saveRes.ok) {
+        showToast('บันทึกไม่สำเร็จ', 'error');
+        setEditSaving(false);
+        return;
+      }
+      setGeojsonLayers((prev) =>
+        prev.map((l) => l.id === editingLayerId
+          ? { ...l, data: updatedData, featureCount: updatedData.features?.length || 1 }
+          : l
+        )
+      );
+      setDrawnFeature(null);
+      setMapKey((prev) => prev + 1);
+      showToast('เพิ่มแปลงใหม่สำเร็จ', 'success');
+    } catch {
+      showToast('เกิดข้อผิดพลาดในการบันทึก', 'error');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const cancelNewFeature = () => {
+    setDrawnFeature(null);
+    setMapKey((prev) => prev + 1);
+  };
+
+  const saveEditFeature = async () => {
+    if (!editCollectRef.current) return;
+    const result = editCollectRef.current();
+    if (!result || !result.feature) { cancelEditFeature(); return; }
+
+    const ly = geojsonLayers.find((l) => l.id === editingLayerId);
+    if (!ly) { cancelEditFeature(); return; }
+
+    const updatedFeatures = [...(ly.data.features || [])];
+    updatedFeatures[result.featureIndex] = result.feature;
+    const updatedData = { ...ly.data, features: updatedFeatures };
+
+    setEditSaving(true);
+    try {
+      const saveRes = await fetch('/api/geojson', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: ly.name, data: updatedData }),
+      });
+      if (!saveRes.ok) {
+        showToast('บันทึกไม่สำเร็จ', 'error');
+        setEditSaving(false);
+        return;
+      }
+      setGeojsonLayers((prev) =>
+        prev.map((l) => l.id === editingLayerId
+          ? { ...l, data: updatedData, featureCount: updatedData.features?.length || 1 }
+          : l
+        )
+      );
+      setEditFeatureIdx(null);
+      editCollectRef.current = null;
+      setMapKey((prev) => prev + 1);
+      showToast('บันทึกรูปแปลงสำเร็จ', 'success');
+    } catch {
+      showToast('เกิดข้อผิดพลาดในการบันทึก', 'error');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const handleResetView = () => {
     if (mapInstance && !mapInstance._removed) {
       const combined = buildCombinedGeoJSON(geojsonLayers);
@@ -722,6 +1176,75 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
     if (type === 'success') { setUploadSuccess(msg); setTimeout(() => setUploadSuccess(null), 3000); }
     else setUploadError(msg);
   };
+
+  const savePropTimerRef = useRef(null);
+
+  const updateFeatureProperty = useCallback((featureIdx, col, newValue) => {
+    const ly = geojsonLayers.find((l) => l.id === tableLayerId);
+    if (!ly) return;
+
+    const updatedFeatures = [...(ly.data.features || [])];
+    const feat = updatedFeatures[featureIdx];
+    if (!feat) return;
+
+    const numVal = Number(newValue);
+    const finalVal = newValue === '' ? null : (!isNaN(numVal) && newValue.trim() !== '' && !/^0\d/.test(newValue.trim())) ? numVal : newValue;
+
+    updatedFeatures[featureIdx] = {
+      ...feat,
+      properties: { ...feat.properties, [col]: finalVal },
+    };
+    const updatedData = { ...ly.data, features: updatedFeatures };
+
+    setGeojsonLayers((prev) =>
+      prev.map((l) => l.id === tableLayerId ? { ...l, data: updatedData } : l)
+    );
+
+    if (savePropTimerRef.current) clearTimeout(savePropTimerRef.current);
+    savePropTimerRef.current = setTimeout(async () => {
+      try {
+        const freshLy = geojsonLayers.find((l) => l.id === tableLayerId);
+        const dataToSave = freshLy ? { ...freshLy.data, features: updatedFeatures } : updatedData;
+        await fetch('/api/geojson', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: ly.name, data: dataToSave }),
+        });
+      } catch { /* ignore */ }
+    }, 1500);
+  }, [geojsonLayers, tableLayerId]);
+
+  const deleteFeature = useCallback(async (featureIdx) => {
+    const ly = geojsonLayers.find((l) => l.id === tableLayerId);
+    if (!ly) return;
+
+    const updatedFeatures = [...(ly.data.features || [])];
+    if (featureIdx < 0 || featureIdx >= updatedFeatures.length) return;
+
+    updatedFeatures.splice(featureIdx, 1);
+    const updatedData = { ...ly.data, features: updatedFeatures };
+
+    setGeojsonLayers((prev) =>
+      prev.map((l) => l.id === tableLayerId
+        ? { ...l, data: updatedData, featureCount: updatedFeatures.length }
+        : l
+      )
+    );
+    setSelectedFeature(null);
+    setHighlightKey((k) => k + 1);
+    setMapKey((prev) => prev + 1);
+
+    try {
+      await fetch('/api/geojson', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: ly.name, data: updatedData }),
+      });
+      showToast('ลบแปลงสำเร็จ', 'success');
+    } catch {
+      showToast('เกิดข้อผิดพลาดในการลบ', 'error');
+    }
+  }, [geojsonLayers, tableLayerId]);
 
   const zoomToFeature = useCallback((feature) => {
     setSelectedFeature(feature); setHighlightKey((k) => k + 1);
@@ -789,13 +1312,37 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
   }, [landUseAssignments]);
 
   const geoJsonStyle = useCallback((color) => () => ({ color, weight: 2, fillColor: color, fillOpacity: 0.2 }), []);
+  const editSelectStyle = useCallback(() => ({ color: '#f59e0b', weight: 2, fillColor: '#fef3c7', fillOpacity: 0.15, dashArray: '4,4' }), []);
   const highlightStyle = { color: '#ef4444', weight: 4, fillColor: '#fbbf24', fillOpacity: 0.45 };
+
+  const editingLayerRef = useRef(null);
+  editingLayerRef.current = geojsonLayers.find((l) => l.id === editingLayerId) || null;
 
   const onEachFeature = useCallback((feature, layer) => {
     if (feature.properties) {
       const entries = Object.entries(feature.properties).filter(([, v]) => v !== null && v !== undefined && v !== '');
       if (entries.length > 0) { layer.bindPopup(`<div class="text-xs leading-relaxed">${entries.slice(0, 10).map(([k, v]) => `<b>${k}:</b> ${v}`).join('<br/>')}</div>`, { maxWidth: 300 }); }
     }
+  }, []);
+
+  const onEachFeatureEditSelect = useCallback((feature, layer) => {
+    const code = getParcelCode(feature.properties);
+    const label = code || 'ไม่ทราบรหัส';
+    layer.bindTooltip(`คลิกเพื่อแก้ไข: ${label}`, { sticky: true, className: 'text-xs' });
+
+    layer.on('click', () => {
+      const ly = editingLayerRef.current;
+      if (!ly?.data?.features) return;
+      const idx = ly.data.features.findIndex((f) => f === feature);
+      if (idx !== -1) selectFeatureForEdit(idx);
+    });
+
+    layer.on('mouseover', () => {
+      layer.setStyle({ weight: 4, fillOpacity: 0.4, fillColor: '#fbbf24' });
+    });
+    layer.on('mouseout', () => {
+      layer.setStyle({ weight: 2, fillOpacity: 0.15, fillColor: '#fef3c7', dashArray: '4,4' });
+    });
   }, []);
 
   const onEachFeatureSurvey = useCallback((feature, layer) => {
@@ -843,12 +1390,39 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
             <BaseLayer name="🛰️ ภาพถ่ายทางอากาศ"><TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution="Tiles &copy; Esri" /></BaseLayer>
           </LayersControl>
 
-          {geojsonLayers.filter((l) => l.visible).map((ly) => (
-            <SafeGeoJSON key={`geojson-${ly.id}-${mapKey}-${surveyMode ? `survey-${landUseVersion}` : 'normal'}`}
-              data={ly.data} style={surveyMode ? getLandUseStyle : geoJsonStyle(ly.color)}
-              onEachFeature={surveyMode ? onEachFeatureSurvey : onEachFeature}
-              pointToLayer={(f, ll) => L.circleMarker(ll, { radius: 6, fillColor: ly.color, color: '#fff', weight: 2, fillOpacity: 0.8 })} />
-          ))}
+          {geojsonLayers.filter((l) => l.visible && (l.id !== editingLayerId || editFeatureIdx !== null)).map((ly) => {
+            const isEditLayer = ly.id === editingLayerId && editFeatureIdx !== null;
+            return (
+              <SafeGeoJSON key={`geojson-${ly.id}-${mapKey}-${surveyMode ? `survey-${landUseVersion}` : 'normal'}`}
+                data={ly.data}
+                style={isEditLayer ? () => ({ color: '#9ca3af', weight: 1, fillColor: '#e5e7eb', fillOpacity: 0.1 })
+                  : surveyMode ? getLandUseStyle : geoJsonStyle(ly.color)}
+                onEachFeature={isEditLayer ? () => {} : surveyMode ? onEachFeatureSurvey : onEachFeature}
+                pointToLayer={(f, ll) => L.circleMarker(ll, { radius: 6, fillColor: ly.color, color: '#fff', weight: 2, fillOpacity: 0.8 })} />
+            );
+          })}
+
+          {editingLayerId && editFeatureIdx === null && (() => {
+            const editLy = geojsonLayers.find((l) => l.id === editingLayerId);
+            if (!editLy) return null;
+            return (
+              <SafeGeoJSON key={`edit-select-${editingLayerId}-${mapKey}`}
+                data={editLy.data} style={editSelectStyle}
+                onEachFeature={onEachFeatureEditSelect}
+                pointToLayer={(f, ll) => L.circleMarker(ll, { radius: 8, fillColor: '#f59e0b', color: '#fff', weight: 2, fillOpacity: 0.8 })} />
+            );
+          })()}
+
+          {editingLayerId && editFeatureIdx !== null && !isDrawing && (() => {
+            const editLy = geojsonLayers.find((l) => l.id === editingLayerId);
+            const feat = editLy?.data?.features?.[editFeatureIdx];
+            if (!feat) return null;
+            return <SingleFeatureEditor feature={feat} featureIndex={editFeatureIdx} onCollect={editCollectRef} />;
+          })()}
+
+          {editingLayerId && isDrawing && !drawnFeature && (
+            <DrawNewFeature onCreated={handleDrawCreated} />
+          )}
 
           {selectedFeature && (
             <SafeGeoJSON key={`highlight-${highlightKey}`} data={selectedFeature} style={() => highlightStyle} onEachFeature={() => {}}
@@ -856,19 +1430,88 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
           )}
         </MapContainer>
 
-        {(loadingFiles || saving) && (
+        {(loadingFiles || saving || editSaving) && (
           <div className="absolute inset-0 bg-white/60 z-20 flex items-center justify-center rounded-lg">
             <div className="flex flex-col items-center gap-2">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-              <span className="text-sm text-gray-600">{saving ? 'กำลังบันทึก...' : 'กำลังโหลด...'}</span>
+              <span className="text-sm text-gray-600">{editSaving ? 'กำลังบันทึกรูปแปลง...' : saving ? 'กำลังบันทึก...' : 'กำลังโหลด...'}</span>
             </div>
           </div>
         )}
 
+        {editingLayerId && editFeatureIdx === null && !isDrawing && !drawnFeature && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-amber-50 border-2 border-amber-400 rounded-xl shadow-lg px-5 py-3 flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-amber-600 text-lg">✏️</span>
+              <div>
+                <p className="text-sm font-semibold text-amber-800">เลือกแปลงที่ต้องการแก้ไข</p>
+                <p className="text-[10px] text-amber-600">คลิกที่แปลงบนแผนที่ หรือวาดแปลงใหม่</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 ml-2">
+              <button onClick={startDrawing}
+                className="px-4 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors shadow">
+                ➕ วาดแปลงใหม่
+              </button>
+              <button onClick={exitEditMode}
+                className="px-4 py-1.5 bg-gray-500 text-white text-sm font-medium rounded-lg hover:bg-gray-600 transition-colors shadow">
+                ✕ ออก
+              </button>
+            </div>
+          </div>
+        )}
+
+        {editingLayerId && isDrawing && !drawnFeature && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-green-50 border-2 border-green-400 rounded-xl shadow-lg px-5 py-3 flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-green-600 text-lg">📐</span>
+              <div>
+                <p className="text-sm font-semibold text-green-800">วาดรูปแปลงใหม่</p>
+                <p className="text-[10px] text-green-600">คลิกเพื่อวางจุดมุม — ดับเบิลคลิกเพื่อจบ</p>
+              </div>
+            </div>
+            <button onClick={() => { setIsDrawing(false); setMapKey((prev) => prev + 1); }}
+              className="px-4 py-1.5 bg-gray-500 text-white text-sm font-medium rounded-lg hover:bg-gray-600 transition-colors shadow ml-2">
+              ✕ ยกเลิก
+            </button>
+          </div>
+        )}
+
+        {editingLayerId && editFeatureIdx !== null && (() => {
+          const editLy = geojsonLayers.find((l) => l.id === editingLayerId);
+          const feat = editLy?.data?.features?.[editFeatureIdx];
+          const code = feat ? getParcelCode(feat.properties) : null;
+          return (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-amber-50 border-2 border-amber-400 rounded-xl shadow-lg px-5 py-3 flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-amber-600 text-lg">✏️</span>
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">กำลังแก้ไข{code ? `: ${code}` : ` แปลง #${editFeatureIdx + 1}`}</p>
+                  <p className="text-[10px] text-amber-600">ลากจุดมุมเพื่อแก้ไข — คลิกเส้นเพื่อเพิ่มจุด</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 ml-2">
+                <button onClick={saveEditFeature} disabled={editSaving}
+                  className="px-4 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 shadow">
+                  {editSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึก'}
+                </button>
+                <button onClick={cancelEditFeature} disabled={editSaving}
+                  className="px-4 py-1.5 bg-white text-amber-700 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-50 shadow border border-amber-300">
+                  ↩ เลือกแปลงอื่น
+                </button>
+                <button onClick={exitEditMode} disabled={editSaving}
+                  className="px-4 py-1.5 bg-gray-500 text-white text-sm font-medium rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50 shadow">
+                  ✕ ออก
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
         <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
-          <button onClick={handleResetView} className="px-3 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg shadow-lg hover:bg-gray-50 transition-colors border border-gray-200">🗺️ จัดกึ่งกลาง</button>
-          {geojsonLayers.length > 0 && <button onClick={() => setShowPanel(!showPanel)} className="px-3 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg shadow-lg hover:bg-gray-50 transition-colors border border-gray-200">📋 เลเยอร์ ({geojsonLayers.length})</button>}
-          {surveyMode && <button onClick={() => setShowLegend(!showLegend)} className="px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-lg shadow-lg hover:bg-green-700 transition-colors">📊 สรุปสำรวจ</button>}
+          {!editingLayerId && <button onClick={handleResetView} className="px-3 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg shadow-lg hover:bg-gray-50 transition-colors border border-gray-200">🗺️ จัดกึ่งกลาง</button>}
+          {!editingLayerId && geojsonLayers.length > 0 && <button onClick={() => setShowPanel(!showPanel)} className="px-3 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg shadow-lg hover:bg-gray-50 transition-colors border border-gray-200">📋 เลเยอร์ ({geojsonLayers.length})</button>}
+          {!editingLayerId && surveyMode && <button onClick={() => setShowLegend(!showLegend)} className="px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-lg shadow-lg hover:bg-green-700 transition-colors">📊 สรุปสำรวจ</button>}
         </div>
 
         {uploadSuccess && <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm">✅ {uploadSuccess}</div>}
@@ -891,7 +1534,21 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
           />
         )}
 
-        {surveyMode && showLegend && <LandUseLegend assignments={landUseAssignments} onClose={() => setShowLegend(false)} />}
+        {surveyMode && showLegend && (
+          <LandUseLegend
+            assignments={landUseAssignments}
+            allParcelCodes={allParcelCodes}
+            onClose={() => setShowLegend(false)}
+            onBulkAssign={bulkAssignLandUse}
+          />
+        )}
+
+        {drawnFeature && (
+          <NewFeaturePropsForm
+            onSave={saveNewFeature}
+            onCancel={cancelNewFeature}
+          />
+        )}
 
         {showPanel && geojsonLayers.length > 0 && (
           <div className="absolute top-20 left-2 z-10 bg-white rounded-lg shadow-lg border border-gray-200 w-72 max-h-[50vh] flex flex-col">
@@ -912,8 +1569,9 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
                     <p className="text-gray-500">{ly.featureCount} features{ly.savedOnServer && <span className="ml-1 text-green-600">• บันทึกแล้ว</span>}</p>
                   </div>
                   <button onClick={() => { setTableLayerId((prev) => (prev === ly.id ? null : ly.id)); setSelectedFeature(null); setHighlightKey((k) => k + 1); }} className={`flex-shrink-0 ${tableLayerId === ly.id ? 'text-blue-600' : 'text-gray-400 hover:text-blue-600'}`} title="ตาราง">📊</button>
+                  <button onClick={() => startEdit(ly.id)} className={`flex-shrink-0 ${editingLayerId === ly.id ? 'text-amber-600' : 'text-gray-400 hover:text-amber-600'}`} title="แก้ไขรูปแปลง" disabled={!!editingLayerId}>✏️</button>
                   <button onClick={() => toggleLayerVisibility(ly.id)} className="text-gray-400 hover:text-blue-600 flex-shrink-0" title={ly.visible ? 'ซ่อน' : 'แสดง'}>{ly.visible ? '👁️' : '🙈'}</button>
-                  <button onClick={() => removeLayer(ly.id)} className="text-gray-400 hover:text-red-600 flex-shrink-0" title="ลบ">🗑️</button>
+                  <button onClick={() => removeLayer(ly.id)} className="text-gray-400 hover:text-red-600 flex-shrink-0" title="ลบ" disabled={!!editingLayerId}>🗑️</button>
                 </div>
               ))}
             </div>
@@ -931,7 +1589,9 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
           <AttributeTable layer={tableLayer}
             onClose={() => { setTableLayerId(null); setSelectedFeature(null); setHighlightKey((k) => k + 1); }}
             onZoomToFeature={zoomToFeature} surveyMode={surveyMode}
-            landUseAssignments={landUseAssignments} />
+            landUseAssignments={landUseAssignments}
+            onUpdateFeature={updateFeatureProperty}
+            onDeleteFeature={deleteFeature} />
         </div>
       )}
     </div>
