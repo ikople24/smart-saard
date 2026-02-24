@@ -93,7 +93,7 @@ const normalizeLUFull = (val) => {
 
 const normalizeLU = (val) => normalizeLUFull(val).types;
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE_OPTIONS = [50, 100, 200, 500];
 
 /* ─── Map utilities ─── */
 
@@ -545,7 +545,7 @@ const LandUsePopup = ({ parcelCode, currentTypes, currentAreas, totalArea, posit
 
 /* ─────────────── Legend Panel ─────────────── */
 
-const LandUseLegend = ({ assignments, allParcelCodes, onClose, onBulkAssign }) => {
+const LandUseLegend = ({ assignments, allParcelCodes, parcelAreaMap, onClose, onBulkAssign }) => {
   const [bulkType, setBulkType] = useState('agriculture');
   const [bulkBusy, setBulkBusy] = useState(false);
   const [showBatch, setShowBatch] = useState(false);
@@ -555,22 +555,31 @@ const LandUseLegend = ({ assignments, allParcelCodes, onClose, onBulkAssign }) =
     const areaWah = {};
     LAND_USE_TYPES.forEach((t) => { counts[t.key] = 0; areaWah[t.key] = 0; });
     let assigned = 0;
-    Object.values(assignments).forEach((val) => {
+
+    Object.entries(assignments).forEach(([code, val]) => {
       const { types, areas } = normalizeLUFull(val);
-      if (types.length > 0) {
-        assigned++;
-        types.forEach((v) => {
-          if (counts[v] !== undefined) {
-            counts[v]++;
-            areaWah[v] += parseAreaToWah(areas[v]);
-          }
-        });
-      }
+      if (types.length === 0) return;
+      assigned++;
+
+      const hasExplicitArea = Object.values(areas).some((a) => parseAreaToWah(a) > 0);
+      const parcelTotalArea = parcelAreaMap?.[code] || null;
+
+      types.forEach((v, i) => {
+        if (counts[v] === undefined) return;
+        counts[v]++;
+
+        if (hasExplicitArea) {
+          areaWah[v] += parseAreaToWah(areas[v]);
+        } else if (i === 0 && parcelTotalArea) {
+          areaWah[v] += parseAreaToWah(parcelTotalArea);
+        }
+      });
     });
+
     const total = allParcelCodes.length;
     const unassigned = allParcelCodes.filter((c) => !assignments[c] || normalizeLUFull(assignments[c]).types.length === 0);
     return { counts, areaWah, assigned, total, unassigned };
-  }, [assignments, allParcelCodes]);
+  }, [assignments, allParcelCodes, parcelAreaMap]);
 
   const handleBulk = async (targetCodes) => {
     if (targetCodes.length === 0) return;
@@ -670,15 +679,19 @@ const LandUseLegend = ({ assignments, allParcelCodes, onClose, onBulkAssign }) =
 
 /* ─────────────── Attribute Table ─────────────── */
 
-const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAssignments, onUpdateFeature, onDeleteFeature }) => {
+const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAssignments, onUpdateFeature, onDeleteFeature, onBulkAssign }) => {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [selectedRow, setSelectedRow] = useState(null);
   const [sortCol, setSortCol] = useState(null);
   const [sortAsc, setSortAsc] = useState(true);
   const [filterLandUse, setFilterLandUse] = useState('all');
+  const [filterBlockId, setFilterBlockId] = useState('all');
   const [editCell, setEditCell] = useState(null);
   const [editValue, setEditValue] = useState('');
+  const [checkedCodes, setCheckedCodes] = useState(new Set());
+  const [bulkType, setBulkType] = useState('agriculture');
+  const [pageSize, setPageSize] = useState(50);
 
   const features = useMemo(() => layer?.data?.features || [], [layer]);
 
@@ -688,8 +701,23 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
     return Array.from(colSet);
   }, [features]);
 
+  const blockIdOptions = useMemo(() => {
+    const ids = new Set();
+    features.forEach((f) => {
+      const v = f.properties?.block_id ?? f.properties?.Block_id ?? f.properties?.BLOCK_ID;
+      if (v !== null && v !== undefined && v !== '') ids.add(String(v));
+    });
+    return Array.from(ids).sort((a, b) => a.localeCompare(b, 'th', { numeric: true }));
+  }, [features]);
+
   const filtered = useMemo(() => {
     let result = features;
+    if (filterBlockId !== 'all') {
+      result = result.filter((f) => {
+        const v = f.properties?.block_id ?? f.properties?.Block_id ?? f.properties?.BLOCK_ID;
+        return String(v ?? '') === filterBlockId;
+      });
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter((f) => {
@@ -706,7 +734,7 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
       });
     }
     return result;
-  }, [features, search, surveyMode, filterLandUse, landUseAssignments]);
+  }, [features, search, filterBlockId, surveyMode, filterLandUse, landUseAssignments]);
 
   const sorted = useMemo(() => {
     if (!sortCol) return filtered;
@@ -719,10 +747,10 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
     });
   }, [filtered, sortCol, sortAsc]);
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-  const paged = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const paged = sorted.slice(page * pageSize, (page + 1) * pageSize);
 
-  useEffect(() => { setPage(0); setSelectedRow(null); }, [search, sortCol, sortAsc, filterLandUse]);
+  useEffect(() => { setPage(0); setSelectedRow(null); }, [search, sortCol, sortAsc, filterLandUse, filterBlockId]);
 
   const handleSort = (col) => {
     if (sortCol === col) setSortAsc((prev) => !prev);
@@ -730,7 +758,7 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
   };
 
   const handleRowClick = (feature, idx) => {
-    setSelectedRow(page * PAGE_SIZE + idx);
+    setSelectedRow(page * pageSize + idx);
     onZoomToFeature?.(feature);
   };
 
@@ -764,10 +792,56 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
     else if (e.key === 'Escape') cancelCellEdit();
   };
 
+  const pagedCodes = useMemo(() =>
+    paged.map((f) => getParcelCode(f.properties)).filter(Boolean),
+  [paged]);
+
+  const allFilteredCodes = useMemo(() =>
+    sorted.map((f) => getParcelCode(f.properties)).filter(Boolean),
+  [sorted]);
+
+  const allPageChecked = pagedCodes.length > 0 && pagedCodes.every((c) => checkedCodes.has(c));
+  const somePageChecked = pagedCodes.some((c) => checkedCodes.has(c));
+
+  const toggleCheck = (code, e) => {
+    e.stopPropagation();
+    setCheckedCodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code); else next.add(code);
+      return next;
+    });
+  };
+
+  const togglePageAll = () => {
+    setCheckedCodes((prev) => {
+      const next = new Set(prev);
+      if (allPageChecked) { pagedCodes.forEach((c) => next.delete(c)); }
+      else { pagedCodes.forEach((c) => next.add(c)); }
+      return next;
+    });
+  };
+
+  const selectAllFiltered = () => {
+    setCheckedCodes(new Set(allFilteredCodes));
+  };
+
+  const clearChecked = () => setCheckedCodes(new Set());
+
+  const handleBulkAssign = async () => {
+    const codes = Array.from(checkedCodes);
+    if (codes.length === 0) return;
+    const t = LAND_USE_MAP[bulkType];
+    const label = t ? `${t.icon} ${t.label}` : bulkType;
+    if (!window.confirm(`กำหนด "${label}" ให้ ${codes.length} แปลงที่เลือก?`)) return;
+    await onBulkAssign(codes, bulkType);
+    setCheckedCodes(new Set());
+  };
+
   if (!layer) return null;
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="relative h-full bg-white">
+      <div className="absolute inset-0 flex flex-col">
       <div className="px-4 py-2 border-b border-gray-200 flex items-center justify-between flex-shrink-0 bg-gray-50">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
@@ -778,6 +852,12 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
           {onUpdateFeature && <span className="text-[10px] text-blue-400">ดับเบิลคลิกเพื่อแก้ไข</span>}
         </div>
         <div className="flex items-center gap-2">
+          {blockIdOptions.length > 0 && (
+            <select value={filterBlockId} onChange={(e) => setFilterBlockId(e.target.value)} className="text-xs border border-gray-300 rounded-md py-1 px-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <option value="all">block_id: ทั้งหมด</option>
+              {blockIdOptions.map((id) => (<option key={id} value={id}>{id}</option>))}
+            </select>
+          )}
           {surveyMode && (
             <select value={filterLandUse} onChange={(e) => setFilterLandUse(e.target.value)} className="text-xs border border-gray-300 rounded-md py-1 px-2 focus:outline-none focus:ring-1 focus:ring-green-500">
               <option value="all">ทั้งหมด</option>
@@ -793,13 +873,19 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 min-h-0 overflow-auto">
         {columns.length === 0 ? (
           <div className="flex items-center justify-center h-full text-gray-400 text-sm">ไม่มีข้อมูล properties</div>
         ) : (
           <table className="w-full text-xs border-collapse">
             <thead className="sticky top-0 z-10">
               <tr className="bg-gray-100">
+                {surveyMode && onBulkAssign && (
+                  <th className="px-2 py-2 text-center border-b border-r border-gray-200 w-8">
+                    <input type="checkbox" checked={allPageChecked} ref={(el) => { if (el) el.indeterminate = somePageChecked && !allPageChecked; }}
+                      onChange={togglePageAll} className="w-3.5 h-3.5 rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer" title="เลือกทั้งหน้า" />
+                  </th>
+                )}
                 <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b border-r border-gray-200 w-10">#</th>
                 {surveyMode && <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b border-r border-gray-200 min-w-[180px]">การใช้ที่ดิน / เนื้อที่</th>}
                 {columns.map((col) => (
@@ -813,14 +899,22 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
             </thead>
             <tbody>
               {paged.map((feature, idx) => {
-                const globalIdx = page * PAGE_SIZE + idx;
+                const globalIdx = page * pageSize + idx;
                 const isSelected = selectedRow === globalIdx;
                 const code = getParcelCode(feature.properties);
                 const luData = normalizeLUFull(code ? landUseAssignments[code] : null);
 
                 return (
                   <tr key={globalIdx} onClick={() => handleRowClick(feature, idx)}
-                    className={`cursor-pointer transition-colors ${isSelected ? 'bg-blue-100' : idx % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50/50 hover:bg-gray-100'}`}>
+                    className={`cursor-pointer transition-colors ${checkedCodes.has(code) ? 'bg-green-50' : isSelected ? 'bg-blue-100' : idx % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50/50 hover:bg-gray-100'}`}>
+                    {surveyMode && onBulkAssign && (
+                      <td className="px-2 py-1.5 text-center border-r border-gray-100">
+                        {code ? (
+                          <input type="checkbox" checked={checkedCodes.has(code)} onChange={(e) => toggleCheck(code, e)}
+                            className="w-3.5 h-3.5 rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer" />
+                        ) : <span className="text-gray-300">—</span>}
+                      </td>
+                    )}
                     <td className="px-3 py-1.5 text-gray-400 border-r border-gray-100 font-mono">{globalIdx + 1}</td>
                     {surveyMode && (
                       <td className="px-1.5 py-1 border-r border-gray-100" onClick={(e) => e.stopPropagation()}>
@@ -891,17 +985,75 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
         )}
       </div>
 
-      {totalPages > 1 && (
-        <div className="px-4 py-2 border-t border-gray-200 flex items-center justify-between flex-shrink-0 bg-gray-50 text-xs">
-          <span className="text-gray-500">หน้า {page + 1} / {totalPages}</span>
-          <div className="flex items-center gap-1">
-            <button onClick={() => setPage(0)} disabled={page === 0} className={`px-2 py-1 rounded ${page === 0 ? 'text-gray-300' : 'text-gray-600 hover:bg-gray-200'}`}>«</button>
-            <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} className={`px-2 py-1 rounded ${page === 0 ? 'text-gray-300' : 'text-gray-600 hover:bg-gray-200'}`}>‹</button>
-            <button onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className={`px-2 py-1 rounded ${page >= totalPages - 1 ? 'text-gray-300' : 'text-gray-600 hover:bg-gray-200'}`}>›</button>
-            <button onClick={() => setPage(totalPages - 1)} disabled={page >= totalPages - 1} className={`px-2 py-1 rounded ${page >= totalPages - 1 ? 'text-gray-300' : 'text-gray-600 hover:bg-gray-200'}`}>»</button>
-          </div>
+      {surveyMode && onBulkAssign && checkedCodes.size > 0 && (
+        <div className="px-3 py-2 border-t-2 border-green-400 bg-green-50 flex items-center gap-3 flex-shrink-0">
+          <span className="text-xs font-semibold text-green-800">✅ เลือก {checkedCodes.size} แปลง</span>
+          {allFilteredCodes.length > checkedCodes.size && (
+            <button onClick={selectAllFiltered} className="text-[10px] text-green-700 underline hover:text-green-900">
+              เลือกทั้งหมด ({allFilteredCodes.length})
+            </button>
+          )}
+          <div className="flex-1" />
+          <select value={bulkType} onChange={(e) => setBulkType(e.target.value)}
+            className="text-xs border border-green-300 rounded-lg py-1 px-2 bg-white focus:outline-none focus:ring-1 focus:ring-green-500">
+            {LAND_USE_TYPES.map((t) => (
+              <option key={t.key} value={t.key}>{t.icon} {t.label}</option>
+            ))}
+          </select>
+          <button onClick={handleBulkAssign}
+            className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors shadow-sm">
+            🌾 กำหนดประเภท
+          </button>
+          <button onClick={clearChecked} className="text-xs text-gray-500 hover:text-gray-700">ยกเลิก</button>
         </div>
       )}
+
+      <div className="px-4 py-2 border-t border-gray-200 flex items-center justify-between flex-shrink-0 bg-gray-50 text-xs">
+        <div className="flex items-center gap-2">
+          <span className="text-gray-500">แสดง {page * pageSize + 1}–{Math.min((page + 1) * pageSize, sorted.length)} จาก {sorted.length}</span>
+          <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}
+            className="border border-gray-300 rounded py-0.5 px-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500">
+            {PAGE_SIZE_OPTIONS.map((n) => (
+              <option key={n} value={n}>{n} แถว/หน้า</option>
+            ))}
+          </select>
+        </div>
+        {totalPages > 1 && (() => {
+          const pages = [];
+          const maxButtons = 7;
+          let start = Math.max(0, page - Math.floor(maxButtons / 2));
+          let end = Math.min(totalPages, start + maxButtons);
+          if (end - start < maxButtons) start = Math.max(0, end - maxButtons);
+
+          for (let i = start; i < end; i++) pages.push(i);
+
+          return (
+            <div className="flex items-center gap-0.5">
+              <button onClick={() => setPage(0)} disabled={page === 0}
+                className={`px-2 py-1 rounded ${page === 0 ? 'text-gray-300 cursor-default' : 'text-gray-600 hover:bg-gray-200'}`}>«</button>
+              <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}
+                className={`px-2 py-1 rounded ${page === 0 ? 'text-gray-300 cursor-default' : 'text-gray-600 hover:bg-gray-200'}`}>‹</button>
+
+              {start > 0 && <span className="px-1 text-gray-400">...</span>}
+
+              {pages.map((i) => (
+                <button key={i} onClick={() => setPage(i)}
+                  className={`min-w-[28px] px-1.5 py-1 rounded font-medium ${i === page ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}>
+                  {i + 1}
+                </button>
+              ))}
+
+              {end < totalPages && <span className="px-1 text-gray-400">...</span>}
+
+              <button onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
+                className={`px-2 py-1 rounded ${page >= totalPages - 1 ? 'text-gray-300 cursor-default' : 'text-gray-600 hover:bg-gray-200'}`}>›</button>
+              <button onClick={() => setPage(totalPages - 1)} disabled={page >= totalPages - 1}
+                className={`px-2 py-1 rounded ${page >= totalPages - 1 ? 'text-gray-300 cursor-default' : 'text-gray-600 hover:bg-gray-200'}`}>»</button>
+            </div>
+          );
+        })()}
+      </div>
+      </div>
     </div>
   );
 };
@@ -987,6 +1139,18 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
       });
     });
     return Array.from(codes);
+  }, [geojsonLayers]);
+
+  const parcelAreaMap = useMemo(() => {
+    const map = {};
+    geojsonLayers.forEach((ly) => {
+      (ly.data?.features || []).forEach((f) => {
+        const code = getParcelCode(f.properties);
+        const area = getParcelArea(f.properties);
+        if (code && area && !map[code]) map[code] = area;
+      });
+    });
+    return map;
   }, [geojsonLayers]);
 
   const bulkAssignLandUse = useCallback(async (parcelCodes, typeKey) => {
@@ -1538,6 +1702,7 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
           <LandUseLegend
             assignments={landUseAssignments}
             allParcelCodes={allParcelCodes}
+            parcelAreaMap={parcelAreaMap}
             onClose={() => setShowLegend(false)}
             onBulkAssign={bulkAssignLandUse}
           />
@@ -1585,13 +1750,14 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
       </div>
 
       {showTable && (
-        <div className="h-1/2 border-t-2 border-gray-300">
+        <div className="h-1/2 border-t-2 border-gray-300 flex flex-col overflow-hidden">
           <AttributeTable layer={tableLayer}
             onClose={() => { setTableLayerId(null); setSelectedFeature(null); setHighlightKey((k) => k + 1); }}
             onZoomToFeature={zoomToFeature} surveyMode={surveyMode}
             landUseAssignments={landUseAssignments}
             onUpdateFeature={updateFeatureProperty}
-            onDeleteFeature={deleteFeature} />
+            onDeleteFeature={deleteFeature}
+            onBulkAssign={bulkAssignLandUse} />
         </div>
       )}
     </div>
