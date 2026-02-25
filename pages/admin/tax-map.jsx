@@ -122,13 +122,11 @@ export default function TaxMapPage() {
 
       {/* Map Area */}
       <div className="flex-1 p-4 bg-gray-50">
-        <div className="w-full h-full rounded-lg overflow-hidden shadow-lg border border-gray-200">
-          <TaxMapWithNoSSR
-            ref={mapRef}
-            onLayerCountChange={setLayerCount}
-            surveyMode={surveyMode}
-          />
-        </div>
+        <TaxMapWithNoSSR
+          ref={mapRef}
+          onLayerCountChange={setLayerCount}
+          surveyMode={surveyMode}
+        />
       </div>
     </div>
   );
