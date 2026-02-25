@@ -95,6 +95,22 @@ const normalizeLU = (val) => normalizeLUFull(val).types;
 
 const PAGE_SIZE_OPTIONS = [50, 100, 200, 500];
 
+/* ─── Geodesic area (sq meters from Leaflet LatLngs) ─── */
+
+const geodesicArea = (latLngs) => {
+  const d2r = Math.PI / 180;
+  const R = 6378137;
+  let s = 0;
+  const n = latLngs.length;
+  if (n < 3) return 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    s += (latLngs[j].lng - latLngs[i].lng) * d2r *
+      (2 + Math.sin(latLngs[i].lat * d2r) + Math.sin(latLngs[j].lat * d2r));
+  }
+  return Math.abs(s * R * R / 2);
+};
+
 /* ─── Map utilities ─── */
 
 const MapController = ({ onMapReady }) => {
@@ -236,6 +252,138 @@ const DrawNewFeature = ({ onCreated }) => {
       }
     };
   }, [map, onCreated]);
+
+  return null;
+};
+
+/* ─── Measure Area Tool ─── */
+
+const MeasureAreaTool = ({ onUpdate }) => {
+  const map = useMap();
+  const pointsRef = useRef([]);
+  const closedRef = useRef(false);
+  const lgRef = useRef(null);
+  const cbRef = useRef(onUpdate);
+  cbRef.current = onUpdate;
+
+  const redraw = useCallback(() => {
+    const lg = lgRef.current;
+    if (!lg) return;
+    lg.clearLayers();
+    const pts = pointsRef.current;
+    const isClosed = closedRef.current;
+
+    if (pts.length === 0) {
+      cbRef.current?.({ pointCount: 0, closed: false, sqm: 0, areaStr: '0-0-0' });
+      return;
+    }
+
+    pts.forEach((p, i) => {
+      L.circleMarker(p, {
+        radius: i === 0 && pts.length > 1 ? 8 : 5,
+        color: i === 0 && pts.length > 1 ? '#dc2626' : '#e11d48',
+        fillColor: i === 0 && pts.length > 1 ? '#fecaca' : '#fff',
+        fillOpacity: 1, weight: 2,
+      }).addTo(lg);
+    });
+
+    if (pts.length >= 3) {
+      const poly = L.polygon(pts, {
+        color: '#e11d48', weight: 2,
+        fillColor: '#fda4af', fillOpacity: 0.3,
+        dashArray: isClosed ? null : '5,5',
+      });
+      poly.addTo(lg);
+
+      const sqm = geodesicArea(pts);
+      const wah = sqm / 4;
+      const areaStr = wahToAreaStr(wah);
+      const center = poly.getBounds().getCenter();
+
+      L.marker(center, {
+        icon: L.divIcon({
+          className: '',
+          html: `<div style="background:white;border:2px solid #e11d48;border-radius:8px;padding:8px 16px;min-width:120px;font-size:14px;font-weight:700;color:#be123c;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.25);transform:translate(-50%,-50%);text-align:center;line-height:1.4;overflow:visible">${areaStr} ไร่-งาน-วา<br><span style="font-size:11px;font-weight:500;color:#6b7280">${sqm.toLocaleString('th-TH', { maximumFractionDigits: 2 })} ตร.ม.</span></div>`,
+          iconSize: [0, 0],
+        }),
+        interactive: false,
+      }).addTo(lg);
+
+      let geoJson = null;
+      if (isClosed) {
+        const ring = pts.map((p) => [p.lng, p.lat]);
+        ring.push([pts[0].lng, pts[0].lat]);
+        geoJson = {
+          type: 'Feature',
+          geometry: { type: 'Polygon', coordinates: [ring] },
+          properties: {
+            Area: areaStr,
+            area_sqm: Math.round(sqm * 100) / 100,
+            measured_at: new Date().toISOString(),
+          },
+        };
+      }
+      cbRef.current?.({ pointCount: pts.length, closed: isClosed, sqm, areaStr, geoJson });
+    } else {
+      if (pts.length === 2) {
+        L.polyline(pts, { color: '#e11d48', weight: 2, dashArray: '5,5' }).addTo(lg);
+      }
+      cbRef.current?.({ pointCount: pts.length, closed: false, sqm: 0, areaStr: '0-0-0' });
+    }
+  }, []);
+
+  useEffect(() => {
+    map.closePopup();
+    const lg = L.layerGroup().addTo(map);
+    lgRef.current = lg;
+
+    const container = map.getContainer();
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:absolute;inset:0;z-index:9999;cursor:crosshair;pointer-events:auto';
+    container.style.position = 'relative';
+    container.appendChild(overlay);
+
+    const handleClick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (closedRef.current) return;
+      const pts = pointsRef.current;
+      const cp = map.mouseEventToContainerPoint(e);
+      const latlng = map.containerPointToLatLng(cp);
+      if (pts.length >= 3) {
+        const pxFirst = map.latLngToContainerPoint(pts[0]);
+        if (cp.distanceTo(pxFirst) < 20) {
+          closedRef.current = true;
+          redraw();
+          return;
+        }
+      }
+      pointsRef.current = [...pts, latlng];
+      redraw();
+    };
+
+    const handleDblClick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (pointsRef.current.length >= 3 && !closedRef.current) {
+        closedRef.current = true;
+        redraw();
+      }
+    };
+
+    overlay.addEventListener('click', handleClick);
+    overlay.addEventListener('dblclick', handleDblClick);
+    map.doubleClickZoom.disable();
+    redraw();
+
+    return () => {
+      overlay.removeEventListener('click', handleClick);
+      overlay.removeEventListener('dblclick', handleDblClick);
+      overlay.remove();
+      map.doubleClickZoom.enable();
+      map.removeLayer(lg);
+    };
+  }, [map, redraw]);
 
   return null;
 };
@@ -1088,6 +1236,17 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawnFeature, setDrawnFeature] = useState(null);
 
+  const [isMeasuring, setIsMeasuring] = useState(false);
+  const [measureResult, setMeasureResult] = useState(null);
+  const [measureKey, setMeasureKey] = useState(0);
+  const [measureNote, setMeasureNote] = useState('');
+  const [measureSaving, setMeasureSaving] = useState(false);
+  const [colorPickerLayerId, setColorPickerLayerId] = useState(null);
+  const [layerToDelete, setLayerToDelete] = useState(null);
+  const measuringRef = useRef(false);
+
+  const MEASUREMENTS_FILENAME = 'measurements.geojson';
+
   const defaultCenter = [13.7563, 100.5018];
   const defaultZoom = 12;
   const tableLayer = geojsonLayers.find((l) => l.id === tableLayerId) || null;
@@ -1095,6 +1254,13 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
   useEffect(() => { onLayerCountChange?.(geojsonLayers.length); }, [geojsonLayers.length, onLayerCountChange]);
   useEffect(() => { loadLandUseData(); }, []);
   useEffect(() => { if (surveyMode) setShowLegend(true); else { setShowLegend(false); setPopupInfo(null); } }, [surveyMode]);
+  useEffect(() => { measuringRef.current = isMeasuring; }, [isMeasuring]);
+  useEffect(() => {
+    if (!colorPickerLayerId) return;
+    const close = () => setColorPickerLayerId(null);
+    const t = setTimeout(() => document.addEventListener('click', close), 0);
+    return () => { clearTimeout(t); document.removeEventListener('click', close); };
+  }, [colorPickerLayerId]);
 
   const loadLandUseData = async () => {
     try {
@@ -1180,9 +1346,10 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
   const loadSavedFiles = async () => {
     try {
       setLoadingFiles(true);
-      const res = await fetch('/api/geojson');
-      if (!res.ok) return;
-      const files = await res.json();
+      const [filesRes, configRes] = await Promise.all([fetch('/api/geojson'), fetch('/api/geojson-config')]);
+      if (!filesRes.ok) return;
+      const files = await filesRes.json();
+      const colorConfig = configRes.ok ? await configRes.json() : {};
       if (files.length === 0) { setLoadingFiles(false); return; }
       const layers = [];
       for (let i = 0; i < files.length; i++) {
@@ -1190,7 +1357,9 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
           const dataRes = await fetch(files[i].url);
           if (!dataRes.ok) continue;
           const data = await dataRes.json();
-          layers.push({ id: Date.now() + i, name: files[i].filename, data, color: LAYER_COLORS[i % LAYER_COLORS.length], visible: true, featureCount: data.features?.length || 1, savedOnServer: true });
+          const savedColor = colorConfig[files[i].filename];
+          const color = savedColor && LAYER_COLORS.includes(savedColor) ? savedColor : LAYER_COLORS[i % LAYER_COLORS.length];
+          layers.push({ id: Date.now() + i, name: files[i].filename, data, color, visible: true, featureCount: data.features?.length || 1, savedOnServer: true });
         } catch { /* skip */ }
       }
       if (layers.length > 0) {
@@ -1442,16 +1611,41 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
     saving,
   }));
 
-  const removeLayer = async (id) => {
+  const confirmRemoveLayer = async () => {
+    if (!layerToDelete) return;
+    const id = layerToDelete.id;
+    setLayerToDelete(null);
     const ly = geojsonLayers.find((l) => l.id === id);
-    if (ly?.savedOnServer) { try { await fetch('/api/geojson', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: ly.name }) }); } catch { /* ignore */ } }
+    if (!ly) return;
+    if (ly.savedOnServer) { try { await fetch('/api/geojson', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: ly.name }) }); } catch { /* ignore */ } }
+    const remaining = geojsonLayers.filter((l) => l.id !== id);
+    const config = {};
+    remaining.forEach((l) => { config[l.name] = l.color; });
+    try { await fetch('/api/geojson-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config }) }); } catch { /* ignore */ }
     if (tableLayerId === id) { setTableLayerId(null); setSelectedFeature(null); }
-    setGeojsonLayers((prev) => prev.filter((l) => l.id !== id)); setMapKey((prev) => prev + 1);
+    setGeojsonLayers(remaining); setMapKey((prev) => prev + 1);
   };
 
   const toggleLayerVisibility = (id) => {
     setGeojsonLayers((prev) => prev.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l))); setMapKey((prev) => prev + 1);
   };
+
+  const updateLayerColor = useCallback(async (id, color) => {
+    const ly = geojsonLayers.find((l) => l.id === id);
+    if (!ly) return;
+    setGeojsonLayers((prev) => prev.map((l) => (l.id === id ? { ...l, color } : l)));
+    setColorPickerLayerId(null);
+    setMapKey((prev) => prev + 1);
+    try {
+      const config = {};
+      geojsonLayers.forEach((l) => { config[l.name] = l.id === id ? color : l.color; });
+      await fetch('/api/geojson-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config }),
+      });
+    } catch { /* ignore */ }
+  }, [geojsonLayers]);
 
   const moveLayer = (id, direction) => {
     setGeojsonLayers((prev) => {
@@ -1462,10 +1656,48 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
     }); setMapKey((prev) => prev + 1);
   };
 
-  const removeAllLayers = async () => {
-    for (const ly of geojsonLayers) { if (ly.savedOnServer) { try { await fetch('/api/geojson', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: ly.name }) }); } catch { /* ignore */ } } }
-    setTableLayerId(null); setSelectedFeature(null); setGeojsonLayers([]); setMapKey((prev) => prev + 1);
-  };
+  const saveMeasurement = useCallback(async () => {
+    const geo = measureResult?.geoJson;
+    if (!geo) return;
+    setMeasureSaving(true);
+    try {
+      const feature = {
+        ...geo,
+        properties: { ...geo.properties, ...(measureNote.trim() ? { note: measureNote.trim() } : {}) },
+      };
+      const existingLy = geojsonLayers.find((l) => l.name === MEASUREMENTS_FILENAME);
+      let data;
+      if (existingLy?.data?.features) {
+        data = { type: 'FeatureCollection', features: [...existingLy.data.features, feature] };
+      } else {
+        data = { type: 'FeatureCollection', features: [feature] };
+      }
+      const res = await fetch('/api/geojson', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: MEASUREMENTS_FILENAME, data }),
+      });
+      const saveData = await res.json();
+      if (!res.ok) { showToast(`บันทึกไม่สำเร็จ: ${saveData.error || ''}`, 'error'); return; }
+      if (existingLy) {
+        setGeojsonLayers((prev) =>
+          prev.map((l) => l.name === MEASUREMENTS_FILENAME ? { ...l, data, featureCount: data.features.length } : l)
+        );
+      } else {
+        const color = LAYER_COLORS[geojsonLayers.length % LAYER_COLORS.length];
+        setGeojsonLayers((prev) => [...prev, { id: Date.now(), name: MEASUREMENTS_FILENAME, data, color, visible: true, featureCount: 1, savedOnServer: true }]);
+        setShowPanel(true);
+      }
+      setMeasureKey((k) => k + 1);
+      setMeasureResult(null);
+      setMeasureNote('');
+      showToast('บันทึกการวัดสำเร็จ', 'success');
+    } catch {
+      showToast('เกิดข้อผิดพลาดในการบันทึก', 'error');
+    } finally {
+      setMeasureSaving(false);
+    }
+  }, [measureResult, measureNote, geojsonLayers]);
 
   const getLandUseStyle = useCallback((feature) => {
     const code = getParcelCode(feature.properties);
@@ -1527,6 +1759,7 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
       if (html) layer.bindPopup(`<div class="text-xs leading-relaxed">${html}</div>`, { maxWidth: 360 });
 
       layer.on('click', (e) => {
+        if (measuringRef.current) return;
         if (!code) return;
         const cp = e.containerPoint || { x: 200, y: 200 };
         setPopupInfo({
@@ -1543,7 +1776,7 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
   const showTable = tableLayerId !== null;
 
   return (
-    <div className="relative w-full h-full flex flex-col">
+    <div className="relative w-full h-full flex flex-col rounded-lg overflow-hidden shadow-lg border border-gray-200">
       <div className={`relative w-full ${showTable ? 'h-1/2' : 'h-full'} transition-all duration-300`}>
         <MapContainer key={mapKey} center={defaultCenter} zoom={defaultZoom} className="w-full rounded-t-lg" style={{ zIndex: 1, height: '100%' }} scrollWheelZoom zoomControl>
           <MapController onMapReady={handleMapReady} />
@@ -1587,6 +1820,8 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
           {editingLayerId && isDrawing && !drawnFeature && (
             <DrawNewFeature onCreated={handleDrawCreated} />
           )}
+
+          {isMeasuring && <MeasureAreaTool key={`measure-${measureKey}`} onUpdate={setMeasureResult} />}
 
           {selectedFeature && (
             <SafeGeoJSON key={`highlight-${highlightKey}`} data={selectedFeature} style={() => highlightStyle} onEachFeature={() => {}}
@@ -1676,7 +1911,73 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
           {!editingLayerId && <button onClick={handleResetView} className="px-3 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg shadow-lg hover:bg-gray-50 transition-colors border border-gray-200">🗺️ จัดกึ่งกลาง</button>}
           {!editingLayerId && geojsonLayers.length > 0 && <button onClick={() => setShowPanel(!showPanel)} className="px-3 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg shadow-lg hover:bg-gray-50 transition-colors border border-gray-200">📋 เลเยอร์ ({geojsonLayers.length})</button>}
           {!editingLayerId && surveyMode && <button onClick={() => setShowLegend(!showLegend)} className="px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-lg shadow-lg hover:bg-green-700 transition-colors">📊 สรุปสำรวจ</button>}
+          {!editingLayerId && (
+            <button
+              onClick={() => {
+                if (isMeasuring) { setIsMeasuring(false); setMeasureResult(null); }
+                else { setIsMeasuring(true); setMeasureKey((k) => k + 1); setMeasureResult(null); }
+              }}
+              className={`px-3 py-2 text-sm font-medium rounded-lg shadow-lg transition-colors border ${isMeasuring ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+            >
+              📐 วัดเนื้อที่
+            </button>
+          )}
         </div>
+
+        {isMeasuring && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-rose-50 border-2 border-rose-400 rounded-xl shadow-lg px-5 py-3 flex flex-wrap items-center gap-3 max-w-xl">
+            <span className="text-rose-600 text-lg">📐</span>
+            <div className="min-w-0">
+              {measureResult?.closed ? (
+                <>
+                  <p className="text-sm font-bold text-rose-800">{measureResult.areaStr} ไร่-งาน-วา</p>
+                  <p className="text-[10px] text-rose-600">{Number(measureResult.sqm).toLocaleString('th-TH', { maximumFractionDigits: 2 })} ตร.ม. ({measureResult.pointCount} จุด)</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-rose-800">
+                    {(measureResult?.pointCount || 0) >= 3
+                      ? `≈ ${measureResult.areaStr} ไร่-งาน-วา`
+                      : `คลิกเพื่อวางจุดมุม (${measureResult?.pointCount || 0} จุด)`}
+                  </p>
+                  <p className="text-[10px] text-rose-600">
+                    {(measureResult?.pointCount || 0) >= 3
+                      ? 'ดับเบิลคลิก หรือ คลิกจุดแรก เพื่อปิดรูป'
+                      : 'ต้องมีอย่างน้อย 3 จุด — ดับเบิลคลิกเพื่อปิดรูป'}
+                  </p>
+                </>
+              )}
+            </div>
+            {measureResult?.closed && (
+              <>
+                <input
+                  type="text"
+                  placeholder="หมายเหตุ (ถ้ามี)"
+                  value={measureNote}
+                  onChange={(e) => setMeasureNote(e.target.value)}
+                  className="px-3 py-1.5 text-sm border border-rose-300 rounded-lg w-40 focus:ring-2 focus:ring-rose-400 focus:border-rose-400"
+                />
+                <button
+                  onClick={saveMeasurement}
+                  disabled={measureSaving}
+                  className="px-4 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors shadow disabled:opacity-50"
+                >
+                  {measureSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึกการวัด'}
+                </button>
+              </>
+            )}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button onClick={() => { setMeasureKey((k) => k + 1); setMeasureResult(null); setMeasureNote(''); }}
+                className="px-3 py-1.5 bg-white text-rose-700 text-sm font-medium rounded-lg hover:bg-rose-100 transition-colors shadow border border-rose-300">
+                🔄 ล้าง
+              </button>
+              <button onClick={() => { setIsMeasuring(false); setMeasureResult(null); setMeasureNote(''); }}
+                className="px-3 py-1.5 bg-gray-500 text-white text-sm font-medium rounded-lg hover:bg-gray-600 transition-colors shadow">
+                ✕ ปิด
+              </button>
+            </div>
+          </div>
+        )}
 
         {uploadSuccess && <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm">✅ {uploadSuccess}</div>}
         {uploadError && (
@@ -1715,6 +2016,26 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
           />
         )}
 
+        {layerToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50" onClick={() => setLayerToDelete(null)}>
+            <div className="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">ยืนยันการลบเลเยอร์</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                ต้องการลบเลเยอร์ <strong>{layerToDelete.name}</strong> ใช่หรือไม่?
+              </p>
+              <p className="text-xs text-amber-600 mb-6">การลบจะลบไฟล์จากเซิร์ฟเวอร์อย่างถาวร</p>
+              <div className="flex gap-3 justify-end">
+                <button onClick={() => setLayerToDelete(null)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm font-medium">
+                  ยกเลิก
+                </button>
+                <button onClick={confirmRemoveLayer} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">
+                  ลบ
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showPanel && geojsonLayers.length > 0 && (
           <div className="absolute top-20 left-2 z-10 bg-white rounded-lg shadow-lg border border-gray-200 w-72 max-h-[50vh] flex flex-col">
             <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
@@ -1728,7 +2049,27 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
                     <button onClick={() => moveLayer(ly.id, 'up')} disabled={index === 0} className={`text-[10px] leading-none px-0.5 ${index === 0 ? 'text-gray-300' : 'text-gray-500 hover:text-blue-600'}`} title="ย้ายขึ้น">▲</button>
                     <button onClick={() => moveLayer(ly.id, 'down')} disabled={index === geojsonLayers.length - 1} className={`text-[10px] leading-none px-0.5 ${index === geojsonLayers.length - 1 ? 'text-gray-300' : 'text-gray-500 hover:text-blue-600'}`} title="ย้ายลง">▼</button>
                   </div>
-                  <div className="w-3 h-3 rounded-sm flex-shrink-0 border border-white shadow-sm" style={{ backgroundColor: ly.color }} />
+                  <div className="relative flex-shrink-0">
+                    <button
+                      onClick={() => setColorPickerLayerId((prev) => (prev === ly.id ? null : ly.id))}
+                      className="w-4 h-4 rounded-sm border-2 border-white shadow-sm hover:ring-2 hover:ring-blue-400 transition-all"
+                      style={{ backgroundColor: ly.color }}
+                      title="เปลี่ยนสี"
+                    />
+                    {colorPickerLayerId === ly.id && (
+                      <div className="absolute left-0 top-6 z-50 bg-white rounded-lg shadow-xl border border-gray-200 p-2 flex flex-wrap gap-1.5 w-36">
+                        {LAYER_COLORS.map((c) => (
+                          <button
+                            key={c}
+                            onClick={() => updateLayerColor(ly.id, c)}
+                            className={`w-6 h-6 rounded border-2 ${ly.color === c ? 'border-gray-800 ring-2 ring-blue-400' : 'border-gray-200 hover:border-gray-400'}`}
+                            style={{ backgroundColor: c }}
+                            title={c}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-800 truncate" title={ly.name}>{ly.name}</p>
                     <p className="text-gray-500">{ly.featureCount} features{ly.savedOnServer && <span className="ml-1 text-green-600">• บันทึกแล้ว</span>}</p>
@@ -1736,15 +2077,10 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
                   <button onClick={() => { setTableLayerId((prev) => (prev === ly.id ? null : ly.id)); setSelectedFeature(null); setHighlightKey((k) => k + 1); }} className={`flex-shrink-0 ${tableLayerId === ly.id ? 'text-blue-600' : 'text-gray-400 hover:text-blue-600'}`} title="ตาราง">📊</button>
                   <button onClick={() => startEdit(ly.id)} className={`flex-shrink-0 ${editingLayerId === ly.id ? 'text-amber-600' : 'text-gray-400 hover:text-amber-600'}`} title="แก้ไขรูปแปลง" disabled={!!editingLayerId}>✏️</button>
                   <button onClick={() => toggleLayerVisibility(ly.id)} className="text-gray-400 hover:text-blue-600 flex-shrink-0" title={ly.visible ? 'ซ่อน' : 'แสดง'}>{ly.visible ? '👁️' : '🙈'}</button>
-                  <button onClick={() => removeLayer(ly.id)} className="text-gray-400 hover:text-red-600 flex-shrink-0" title="ลบ" disabled={!!editingLayerId}>🗑️</button>
+                  <button onClick={(e) => { e.stopPropagation(); setLayerToDelete({ id: ly.id, name: ly.name }); }} className="text-gray-400 hover:text-red-600 flex-shrink-0" title="ลบ" disabled={!!editingLayerId}>🗑️</button>
                 </div>
               ))}
             </div>
-            {geojsonLayers.length > 1 && (
-              <div className="px-3 py-2 border-t border-gray-200 flex-shrink-0">
-                <button onClick={removeAllLayers} className="w-full px-3 py-1.5 bg-red-50 text-red-600 text-xs font-medium rounded-lg hover:bg-red-100 transition-colors">🗑️ ลบทั้งหมด</button>
-              </div>
-            )}
           </div>
         )}
       </div>
