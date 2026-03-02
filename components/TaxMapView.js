@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import L from 'leaflet';
 import '@geoman-io/leaflet-geoman-free';
+import area from '@turf/area';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -32,6 +33,11 @@ const LAND_USE_TYPES = [
 
 const LAND_USE_MAP = Object.fromEntries(LAND_USE_TYPES.map((t) => [t.key, t]));
 
+/* ─── Thai land units (Engineering Spec: 1 ตร.วา = 4 ตร.ม.) ─── */
+const SQM_PER_WAH = 4;
+const WAH_PER_NGAN = 100;
+const WAH_PER_RAI = 400;
+
 /* ─── Area helpers (ไร่-งาน-ตารางวา) ─── */
 
 const parseAreaToWah = (str) => {
@@ -40,15 +46,15 @@ const parseAreaToWah = (str) => {
   const rai = parts[0] || 0;
   const ngan = parts[1] || 0;
   const wah = parts[2] || 0;
-  return rai * 400 + ngan * 100 + wah;
+  return rai * WAH_PER_RAI + ngan * WAH_PER_NGAN + wah;
 };
 
 const wahToAreaStr = (totalWah) => {
   if (!totalWah || totalWah <= 0) return '0-0-0';
-  const rai = Math.floor(totalWah / 400);
-  const remain = totalWah - rai * 400;
-  const ngan = Math.floor(remain / 100);
-  const wah = Math.round((remain - ngan * 100) * 100) / 100;
+  const rai = Math.floor(totalWah / WAH_PER_RAI);
+  const remain = totalWah - rai * WAH_PER_RAI;
+  const ngan = Math.floor(remain / WAH_PER_NGAN);
+  const wah = Math.round((remain - ngan * WAH_PER_NGAN) * 100) / 100;
   return `${rai}-${ngan}-${wah}`;
 };
 
@@ -95,20 +101,18 @@ const normalizeLU = (val) => normalizeLUFull(val).types;
 
 const PAGE_SIZE_OPTIONS = [50, 100, 200, 500];
 
-/* ─── Geodesic area (sq meters from Leaflet LatLngs) ─── */
-
+/* ─── Geodesic area (sq meters, WGS84 ellipsoid via Turf.js) ─── */
 const geodesicArea = (latLngs) => {
-  const d2r = Math.PI / 180;
-  const R = 6378137;
-  let s = 0;
-  const n = latLngs.length;
-  if (n < 3) return 0;
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    s += (latLngs[j].lng - latLngs[i].lng) * d2r *
-      (2 + Math.sin(latLngs[i].lat * d2r) + Math.sin(latLngs[j].lat * d2r));
+  if (!latLngs || latLngs.length < 3) return 0;
+  const ring = latLngs.map((p) => [p.lng, p.lat]);
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) ring.push(first);
+  try {
+    return Math.abs(area({ type: 'Polygon', coordinates: [ring] }));
+  } catch {
+    return 0;
   }
-  return Math.abs(s * R * R / 2);
 };
 
 /* ─── Map utilities ─── */
@@ -296,7 +300,7 @@ const MeasureAreaTool = ({ onUpdate }) => {
       poly.addTo(lg);
 
       const sqm = geodesicArea(pts);
-      const wah = sqm / 4;
+      const wah = sqm / SQM_PER_WAH;
       const areaStr = wahToAreaStr(wah);
       const center = poly.getBounds().getCenter();
 
