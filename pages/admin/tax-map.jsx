@@ -47,87 +47,38 @@ export default function TaxMapPage() {
   };
 
   if (!isLoaded || !userId) {
-    return <div className="text-center p-8">กำลังโหลด...</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+          <p className="text-sm text-gray-500 font-medium">กำลังตรวจสอบสิทธิ์...</p>
+        </div>
+      </div>
+    );
   }
 
   const role = user?.publicMetadata?.role;
   if (role !== "admin" && role !== "superadmin") {
-    return <div className="text-center p-8">ไม่มีสิทธิ์เข้าถึงหน้านี้</div>;
-  }
-
-  return (
-    <div className="flex flex-col h-[calc(100vh-80px)]">
-      {/* Header */}
-      <div className="px-4 py-3 bg-white border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center">
-          <MapPinIcon className="h-6 w-6 text-blue-600 mr-2" />
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">แผนที่ภาษี</h1>
-            <p className="text-sm text-gray-500">
-              แผนที่สำหรับจัดการข้อมูลภาษีในพื้นที่
-              {layerCount > 0 && (
-                <span className="ml-2 text-blue-600 font-medium">• {layerCount} เลเยอร์</span>
-              )}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* Survey Mode Toggle */}
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-xl max-w-sm w-full border border-gray-100">
+          <div className="text-red-500 text-5xl mb-4">⚠️</div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">ไม่มีสิทธิ์เข้าถึง</h2>
+          <p className="text-sm text-gray-500 mb-6">บัญชีของคุณไม่มีสิทธิ์ในการจัดการแผนที่ภาษี</p>
           <button
-            onClick={() => setSurveyMode(!surveyMode)}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-              surveyMode
-                ? "bg-green-600 text-white shadow-md ring-2 ring-green-300"
-                : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
-            }`}
-          >
-            {surveyMode ? "🌍 โหมดสำรวจ: เปิด" : "🌍 สำรวจการใช้ที่ดิน"}
-          </button>
-
-          <button
-            onClick={handleUploadClick}
-            disabled={uploading}
-            className={`px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors ${
-              uploading ? "bg-blue-400 cursor-wait" : "bg-blue-600 hover:bg-blue-700"
-            }`}
-          >
-            {uploading ? "⏳ กำลังบันทึก..." : "📂 อัปโหลด GeoJSON"}
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".geojson,.json"
-            onChange={handleFileChange}
-            className="hidden"
-            disabled={uploading}
-          />
-
-          <button
-            onClick={() => router.push("/admin")}
-            className="px-4 py-2 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700 transition-colors"
+            onClick={() => router.replace("/")}
+            className="w-full py-2.5 bg-gray-900 text-white text-sm font-semibold rounded-xl hover:bg-gray-800 transition-colors"
           >
             กลับหน้าหลัก
           </button>
         </div>
       </div>
+    );
+  }
 
-      {/* Survey mode instruction bar */}
-      {surveyMode && (
-        <div className="px-4 py-2 bg-green-50 border-b border-green-200 flex items-center gap-3 flex-shrink-0">
-          <span className="text-green-700 text-sm font-medium">🌍 โหมดสำรวจการใช้ประโยชน์ที่ดิน</span>
-          <span className="text-green-600 text-xs">คลิกที่แปลงบนแผนที่เพื่อกำหนดประเภทการใช้ที่ดิน หรือใช้ตารางข้อมูลเพื่อกำหนดทีละหลายแปลง</span>
-        </div>
-      )}
-
-      {/* Map Area */}
-      <div className="flex-1 p-4 bg-gray-50">
-        <TaxMapWithNoSSR
-          ref={mapRef}
-          onLayerCountChange={setLayerCount}
-          surveyMode={surveyMode}
-        />
-      </div>
+  return (
+    <div className="w-full h-screen bg-gray-50 overflow-hidden flex flex-col">
+      <TaxMapWithNoSSR />
     </div>
   );
 }
