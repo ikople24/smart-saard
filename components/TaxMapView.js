@@ -5,6 +5,12 @@ import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import L from 'leaflet';
 import '@geoman-io/leaflet-geoman-free';
 import area from '@turf/area';
+import Link from 'next/link';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Layers, MapPin, Wrench, ChevronLeft, ChevronRight, UploadCloud,
+  Trash2, Eye, EyeOff, Table, Info, Save, X, CheckCircle2, AlertTriangle, ArrowUpDown, ChevronDown, ChevronUp
+} from 'lucide-react';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -21,25 +27,24 @@ const LAYER_COLORS = [
 ];
 
 const LAND_USE_TYPES = [
-  { key: 'agriculture', label: 'เกษตรกรรม', icon: '🌾', color: '#22c55e', fillColor: '#86efac' },
-  { key: 'residential', label: 'ที่อยู่อาศัย', icon: '🏠', color: '#3b82f6', fillColor: '#93c5fd' },
-  { key: 'commercial', label: 'พาณิชยกรรม', icon: '🏪', color: '#f59e0b', fillColor: '#fcd34d' },
-  { key: 'industrial', label: 'อุตสาหกรรม', icon: '🏭', color: '#8b5cf6', fillColor: '#c4b5fd' },
-  { key: 'government', label: 'สถานที่ราชการ', icon: '🏛️', color: '#06b6d4', fillColor: '#67e8f9' },
-  { key: 'religious', label: 'ศาสนสถาน', icon: '⛪', color: '#ec4899', fillColor: '#f9a8d4' },
-  { key: 'vacant', label: 'รกร้างว่างเปล่า', icon: '🏜️', color: '#9ca3af', fillColor: '#d1d5db' },
-  { key: 'other', label: 'อื่นๆ', icon: '📌', color: '#78716c', fillColor: '#d6d3d1' },
+  { key: 'agriculture', label: 'เกษตรกรรม', icon: '🌾', color: '#22c55e', fillColor: '#dcfce7' },
+  { key: 'residential', label: 'ที่อยู่อาศัย', icon: '🏠', color: '#3b82f6', fillColor: '#dbeafe' },
+  { key: 'commercial', label: 'พาณิชยกรรม', icon: '🏪', color: '#f59e0b', fillColor: '#fef3c7' },
+  { key: 'industrial', label: 'อุตสาหกรรม', icon: '🏭', color: '#8b5cf6', fillColor: '#f3e8ff' },
+  { key: 'government', label: 'สถานที่ราชการ', icon: '🏛️', color: '#06b6d4', fillColor: '#ecfeff' },
+  { key: 'religious', label: 'ศาสนสถาน', icon: '⛪', color: '#ec4899', fillColor: '#fce7f3' },
+  { key: 'vacant', label: 'รกร้างว่างเปล่า', icon: '🏜️', color: '#9ca3af', fillColor: '#f3f4f6' },
+  { key: 'other', label: 'อื่นๆ', icon: '📌', color: '#78716c', fillColor: '#f5f5f4' },
 ];
 
 const LAND_USE_MAP = Object.fromEntries(LAND_USE_TYPES.map((t) => [t.key, t]));
 
-/* ─── Thai land units (Engineering Spec: 1 ตร.วา = 4 ตร.ม.) ─── */
+/* ─── Thai land units (1 ตร.วา = 4 ตร.ม.) ─── */
 const SQM_PER_WAH = 4;
 const WAH_PER_NGAN = 100;
 const WAH_PER_RAI = 400;
 
-/* ─── Area helpers (ไร่-งาน-ตารางวา) ─── */
-
+/* ─── Area helpers ─── */
 const parseAreaToWah = (str) => {
   if (!str || typeof str !== 'string') return 0;
   const parts = str.split('-').map((s) => parseFloat(s) || 0);
@@ -85,10 +90,6 @@ const normalizeAreaStr = (str) => {
   return `${r}-${n}-${w}`;
 };
 
-/**
- * Normalize assignment value from any old/new format → { types: string[], areas: Record<string,string> }
- * Supports: string, array, { types, areas }
- */
 const normalizeLUFull = (val) => {
   if (!val) return { types: [], areas: {} };
   if (typeof val === 'string') return { types: [val], areas: {} };
@@ -101,7 +102,6 @@ const normalizeLU = (val) => normalizeLUFull(val).types;
 
 const PAGE_SIZE_OPTIONS = [50, 100, 200, 500];
 
-/* ─── Geodesic area (sq meters, WGS84 ellipsoid via Turf.js) ─── */
 const geodesicArea = (latLngs) => {
   if (!latLngs || latLngs.length < 3) return 0;
   const ring = latLngs.map((p) => [p.lng, p.lat]);
@@ -114,8 +114,6 @@ const geodesicArea = (latLngs) => {
     return 0;
   }
 };
-
-/* ─── Map utilities ─── */
 
 const MapController = ({ onMapReady }) => {
   const map = useMap();
@@ -150,8 +148,7 @@ const buildCombinedGeoJSON = (layers) => {
   return { type: 'FeatureCollection', features: layers.flatMap((l) => l.data.features || [l.data]) };
 };
 
-/* ─── Single-Feature Geometry Editor (leaflet-geoman) ─── */
-
+/* ─── Single-Feature Geometry Editor ─── */
 const SingleFeatureEditor = ({ feature, featureIndex, onCollect }) => {
   const map = useMap();
   const editLayerRef = useRef(null);
@@ -216,8 +213,7 @@ const SingleFeatureEditor = ({ feature, featureIndex, onCollect }) => {
   return null;
 };
 
-/* ─── Draw New Feature (leaflet-geoman) ─── */
-
+/* ─── Draw New Feature ─── */
 const DrawNewFeature = ({ onCreated }) => {
   const map = useMap();
   const createdRef = useRef(null);
@@ -261,7 +257,6 @@ const DrawNewFeature = ({ onCreated }) => {
 };
 
 /* ─── Measure Area Tool ─── */
-
 const MeasureAreaTool = ({ onUpdate }) => {
   const map = useMap();
   const pointsRef = useRef([]);
@@ -307,7 +302,10 @@ const MeasureAreaTool = ({ onUpdate }) => {
       L.marker(center, {
         icon: L.divIcon({
           className: '',
-          html: `<div style="background:white;border:2px solid #e11d48;border-radius:8px;padding:8px 16px;min-width:120px;font-size:14px;font-weight:700;color:#be123c;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.25);transform:translate(-50%,-50%);text-align:center;line-height:1.4;overflow:visible">${areaStr} ไร่-งาน-วา<br><span style="font-size:11px;font-weight:500;color:#6b7280">${sqm.toLocaleString('th-TH', { maximumFractionDigits: 2 })} ตร.ม.</span></div>`,
+          html: `<div class="bg-white border-2 border-rose-500 rounded-xl px-3 py-1.5 shadow-xl text-rose-700 font-bold text-xs whitespace-nowrap -translate-x-1/2 -translate-y-1/2 text-center leading-normal">
+                  <div>${areaStr} ไร่-งาน-วา</div>
+                  <div class="text-[10px] text-gray-500 font-normal">${Math.round(sqm).toLocaleString('th-TH')} ตร.ม.</div>
+                 </div>`,
           iconSize: [0, 0],
         }),
         interactive: false,
@@ -393,41 +391,40 @@ const MeasureAreaTool = ({ onUpdate }) => {
 };
 
 /* ─── New Feature Properties Form ─── */
-
 const NewFeaturePropsForm = ({ onSave, onCancel }) => {
   const [parcelCode, setParcelCode] = useState('');
   const [area, setArea] = useState('');
 
   return (
-    <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 bg-white rounded-xl shadow-2xl border border-green-300 w-80 overflow-hidden">
-      <div className="px-4 py-3 bg-green-50 border-b border-green-200 flex items-center gap-2">
+    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-white rounded-2xl shadow-2xl border border-green-200 w-80 overflow-hidden animate-fade-in">
+      <div className="px-4 py-3.5 bg-green-50 border-b border-green-100 flex items-center gap-2">
         <span className="text-green-600 text-lg">📝</span>
         <div>
-          <p className="text-sm font-semibold text-green-800">กรอกข้อมูลแปลงใหม่</p>
-          <p className="text-[10px] text-green-600">กรอกรหัสแปลงและเนื้อที่ (ถ้ามี)</p>
+          <p className="text-sm font-bold text-green-800">กรอกข้อมูลแปลงใหม่</p>
+          <p className="text-[10px] text-green-600">กรอกรหัสแปลงและเนื้อที่ (ไร่-งาน-วา)</p>
         </div>
       </div>
       <div className="p-4 space-y-3">
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">รหัสแปลง (parcel_cod)</label>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">รหัสแปลง (parcel_cod)</label>
           <input type="text" value={parcelCode} onChange={(e) => setParcelCode(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
             placeholder="เช่น 1234-56-789" autoFocus />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">เนื้อที่ (ไร่-งาน-ตร.วา)</label>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">เนื้อที่ (ไร่-งาน-ตร.วา)</label>
           <input type="text" value={area} onChange={(e) => setArea(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
             placeholder="เช่น 12-2-41" />
         </div>
       </div>
-      <div className="px-4 py-3 border-t border-gray-100 flex items-center gap-2 bg-gray-50">
+      <div className="px-4 py-3 border-t border-gray-100 flex items-center gap-2 bg-gray-50/50">
         <button onClick={() => onSave({ parcel_cod: parcelCode || undefined, Area: area || undefined })}
-          className="flex-1 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors shadow">
-          💾 บันทึกแปลงใหม่
+          className="flex-1 px-4 py-2 bg-green-600 text-white text-xs font-semibold rounded-xl hover:bg-green-700 transition-colors shadow-md">
+          บันทึกแปลงใหม่
         </button>
         <button onClick={onCancel}
-          className="px-4 py-2 bg-gray-400 text-white text-sm font-medium rounded-lg hover:bg-gray-500 transition-colors shadow">
+          className="px-4 py-2 bg-gray-200 text-gray-700 text-xs font-semibold rounded-xl hover:bg-gray-300 transition-colors">
           ยกเลิก
         </button>
       </div>
@@ -470,7 +467,6 @@ const SafeGeoJSON = (props) => {
 };
 
 /* ─────────────── Area Input Row ─────────────── */
-
 const AreaInput = ({ label, icon, color, value, onChange, onAutoFill, remainWah }) => {
   const [localRai, setLocalRai] = useState(() => parseAreaParts(value).rai);
   const [localNgan, setLocalNgan] = useState(() => parseAreaParts(value).ngan);
@@ -514,315 +510,23 @@ const AreaInput = ({ label, icon, color, value, onChange, onAutoFill, remainWah 
     }
   };
 
-  const inputCls = "w-12 text-center text-[11px] border border-gray-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-green-400";
+  const inputCls = "w-11 text-center text-xs border border-gray-200 rounded-lg py-1 px-1.5 focus:outline-none focus:ring-1 focus:ring-green-400";
 
   return (
-    <div className="flex items-center gap-1 py-1">
-      <span className="text-[11px] w-16 truncate flex-shrink-0" style={{ color }} title={label}>{icon} {label}</span>
-      <input type="text" inputMode="numeric" value={localRai} onChange={(e) => handleChange('rai', e.target.value)} placeholder="ไร่" className={inputCls} />
-      <span className="text-gray-400 text-[10px]">-</span>
-      <input type="text" inputMode="numeric" value={localNgan} onChange={(e) => handleChange('ngan', e.target.value)} placeholder="งาน" className="w-10 text-center text-[11px] border border-gray-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-green-400" />
-      <span className="text-gray-400 text-[10px]">-</span>
-      <input type="text" inputMode="decimal" value={localWah} onChange={(e) => handleChange('wah', e.target.value)} placeholder="วา" className={inputCls} />
-      {onAutoFill && remainWah > 0 && (
-        <button onClick={onAutoFill} className="ml-0.5 px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] rounded hover:bg-green-200 transition-colors flex-shrink-0 font-medium" title="เติมเนื้อที่คงเหลือ">
-          Auto
-        </button>
-      )}
-    </div>
-  );
-};
-
-/* ─────────────── Land Use Assign Popup ─────────────── */
-
-const LandUsePopup = ({ parcelCode, currentTypes, currentAreas, totalArea, position, onAssign, onClose }) => {
-  const [selected, setSelected] = useState(currentTypes || []);
-  const [areas, setAreas] = useState(currentAreas || {});
-
-  useEffect(() => {
-    setSelected(currentTypes || []);
-    setAreas(currentAreas || {});
-  }, [currentTypes, currentAreas]);
-
-  if (!position) return null;
-
-  const totalWah = parseAreaToWah(totalArea);
-  const usedWah = selected.reduce((sum, key) => sum + parseAreaToWah(areas[key]), 0);
-  const remainWah = totalWah - usedWah;
-  const isOverLimit = totalWah > 0 && usedWah > totalWah;
-
-  const toggle = (key) => {
-    setSelected((prev) => {
-      if (prev.includes(key)) {
-        const next = prev.filter((k) => k !== key);
-        setAreas((a) => { const copy = { ...a }; delete copy[key]; return copy; });
-        return next;
-      }
-      return [...prev, key];
-    });
-  };
-
-  const setPrimary = (key) => {
-    setSelected((prev) => {
-      if (!prev.includes(key)) return [key, ...prev];
-      return [key, ...prev.filter((k) => k !== key)];
-    });
-  };
-
-  const handleAreaChange = (key, val) => {
-    setAreas((prev) => ({ ...prev, [key]: val }));
-  };
-
-  const autoFillRemain = (key) => {
-    const otherUsed = selected.reduce((sum, k) => k === key ? sum : sum + parseAreaToWah(areas[k]), 0);
-    const remaining = totalWah - otherUsed;
-    if (remaining > 0) {
-      setAreas((prev) => ({ ...prev, [key]: wahToAreaStr(remaining) }));
-    }
-  };
-
-  const handleSave = () => {
-    const cleanAreas = {};
-    Object.entries(areas).forEach(([k, v]) => {
-      const n = normalizeAreaStr(v);
-      if (n) cleanAreas[k] = n;
-    });
-    onAssign({ types: selected, areas: cleanAreas });
-  };
-
-  const handleClear = () => {
-    onAssign({ types: [], areas: {} });
-  };
-
-  const primary = selected[0] || null;
-  const primaryType = primary ? LAND_USE_MAP[primary] : null;
-
-  return (
-    <div
-      className="absolute z-30 bg-white rounded-xl shadow-2xl border border-gray-200 w-80 max-h-[80vh] overflow-y-auto"
-      style={{ top: position.y, left: position.x, transform: 'translate(-50%, 8px)' }}
-    >
-      {/* Header */}
-      <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white rounded-t-xl z-10">
-        <div>
-          <p className="text-xs text-gray-500">แปลง</p>
-          <p className="text-sm font-bold text-gray-800">{parcelCode || '—'}</p>
-          {totalArea && <p className="text-[10px] text-gray-400">เนื้อที่รวม: {totalArea} (ไร่-งาน-วา)</p>}
-        </div>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
-      </div>
-
-      {/* Primary badges */}
-      {selected.length > 0 && (
-        <div className="px-3 py-1.5 border-b border-gray-100 bg-gray-50">
-          <p className="text-[10px] text-gray-500 mb-1">ประเภทหลัก (สีแผนที่) — คลิกเพื่อเปลี่ยน</p>
-          <div className="flex flex-wrap gap-1">
-            {selected.map((key, i) => {
-              const t = LAND_USE_MAP[key];
-              if (!t) return null;
-              return (
-                <button key={key} onClick={() => setPrimary(key)}
-                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-all ${i === 0 ? 'ring-2 ring-offset-1' : 'opacity-70 hover:opacity-100'}`}
-                  style={{ backgroundColor: t.fillColor, color: t.color, ringColor: i === 0 ? t.color : undefined }}
-                  title={i === 0 ? 'ประเภทหลัก' : 'คลิกเพื่อตั้งเป็นหลัก'}>
-                  {t.icon} {t.label}{i === 0 && <span className="text-[8px]">★</span>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Type selection grid */}
-      <div className="p-2 grid grid-cols-2 gap-1">
-        {LAND_USE_TYPES.map((type) => {
-          const isSelected = selected.includes(type.key);
-          return (
-            <button key={type.key} onClick={() => toggle(type.key)}
-              className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all border ${isSelected ? 'border-current shadow-sm' : 'border-transparent hover:bg-gray-50'}`}
-              style={{ backgroundColor: isSelected ? type.fillColor : undefined, color: isSelected ? type.color : undefined }}>
-              <span>{type.icon}</span>
-              <span className="truncate">{type.label}</span>
-              {isSelected && <span className="ml-auto text-[10px]">✓</span>}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Area allocation */}
-      {selected.length > 0 && (
-        <div className="px-3 py-2 border-t border-gray-100">
-          <p className="text-[10px] text-gray-500 mb-1 font-medium">เนื้อที่แต่ละประเภท (ไร่-งาน-ตร.วา)</p>
-          {selected.map((key) => {
-            const t = LAND_USE_MAP[key];
-            if (!t) return null;
-            const otherUsed = selected.reduce((sum, k) => k === key ? sum : sum + parseAreaToWah(areas[k]), 0);
-            return (
-              <AreaInput key={key} label={t.label} icon={t.icon} color={t.color}
-                value={areas[key] || ''} onChange={(v) => handleAreaChange(key, v)}
-                onAutoFill={totalWah > 0 ? () => autoFillRemain(key) : undefined}
-                remainWah={totalWah > 0 ? totalWah - otherUsed : 0} />
-            );
-          })}
-
-          {/* Summary bar */}
-          {totalWah > 0 && (
-            <div className={`mt-1 p-1.5 rounded text-[10px] ${isOverLimit ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-600'}`}>
-              <div className="flex justify-between">
-                <span>ใช้ไป: <b>{wahToAreaStr(usedWah)}</b></span>
-                <span>คงเหลือ: <b className={isOverLimit ? 'text-red-600' : 'text-green-600'}>{wahToAreaStr(Math.max(0, remainWah))}</b></span>
-              </div>
-              {isOverLimit && <p className="mt-0.5 font-medium">⚠️ เกินเนื้อที่รวม {wahToAreaStr(usedWah - totalWah)}</p>}
-              <div className="mt-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, (usedWah / totalWah) * 100)}%`, backgroundColor: isOverLimit ? '#ef4444' : '#22c55e' }} />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Actions */}
-      <div className="px-3 py-2 border-t border-gray-100 flex items-center gap-2 sticky bottom-0 bg-white rounded-b-xl">
-        <button onClick={handleSave} disabled={isOverLimit}
-          className="flex-1 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-          {primaryType ? `บันทึก (${primaryType.icon} ${selected.length > 1 ? `+${selected.length - 1}` : primaryType.label})` : 'บันทึก'}
-        </button>
-        {selected.length > 0 && (
-          <button onClick={handleClear} className="px-2 py-1.5 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors">ล้าง</button>
-        )}
-      </div>
-    </div>
-  );
-};
-
-/* ─────────────── Legend Panel ─────────────── */
-
-const LandUseLegend = ({ assignments, allParcelCodes, parcelAreaMap, onClose, onBulkAssign }) => {
-  const [bulkType, setBulkType] = useState('agriculture');
-  const [bulkBusy, setBulkBusy] = useState(false);
-  const [showBatch, setShowBatch] = useState(false);
-
-  const stats = useMemo(() => {
-    const counts = {};
-    const areaWah = {};
-    LAND_USE_TYPES.forEach((t) => { counts[t.key] = 0; areaWah[t.key] = 0; });
-    let assigned = 0;
-
-    Object.entries(assignments).forEach(([code, val]) => {
-      const { types, areas } = normalizeLUFull(val);
-      if (types.length === 0) return;
-      assigned++;
-
-      const hasExplicitArea = Object.values(areas).some((a) => parseAreaToWah(a) > 0);
-      const parcelTotalArea = parcelAreaMap?.[code] || null;
-
-      types.forEach((v, i) => {
-        if (counts[v] === undefined) return;
-        counts[v]++;
-
-        if (hasExplicitArea) {
-          areaWah[v] += parseAreaToWah(areas[v]);
-        } else if (i === 0 && parcelTotalArea) {
-          areaWah[v] += parseAreaToWah(parcelTotalArea);
-        }
-      });
-    });
-
-    const total = allParcelCodes.length;
-    const unassigned = allParcelCodes.filter((c) => !assignments[c] || normalizeLUFull(assignments[c]).types.length === 0);
-    return { counts, areaWah, assigned, total, unassigned };
-  }, [assignments, allParcelCodes, parcelAreaMap]);
-
-  const handleBulk = async (targetCodes) => {
-    if (targetCodes.length === 0) return;
-    const t = LAND_USE_MAP[bulkType];
-    const label = t ? `${t.icon} ${t.label}` : bulkType;
-    if (!window.confirm(`กำหนด "${label}" ให้ ${targetCodes.length} แปลง ที่เลือก?`)) return;
-    setBulkBusy(true);
-    try {
-      await onBulkAssign(targetCodes, bulkType);
-    } finally {
-      setBulkBusy(false);
-    }
-  };
-
-  return (
-    <div className="absolute bottom-4 right-4 z-10 bg-white rounded-lg shadow-lg border border-gray-200 w-72 max-h-[80vh] overflow-y-auto">
-      <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-lg">
-        <h4 className="text-xs font-semibold text-gray-700">สำรวจการใช้ที่ดิน</h4>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-sm">&times;</button>
-      </div>
-
-      <div className="p-2 space-y-1">
-        {LAND_USE_TYPES.map((type) => (
-          <div key={type.key} className="flex items-center gap-2 text-xs">
-            <div className="w-4 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: type.fillColor, border: `1.5px solid ${type.color}` }} />
-            <span className="flex-1 truncate">{type.icon} {type.label}</span>
-            <span className="font-mono text-gray-500 text-[10px] w-12 text-right">{stats.counts[type.key]} แปลง</span>
-            {stats.areaWah[type.key] > 0 && (
-              <span className="font-mono text-gray-400 text-[10px] w-16 text-right">{wahToAreaStr(stats.areaWah[type.key])}</span>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <div className="px-3 py-2 border-t border-gray-100 text-xs text-gray-500">
-        สำรวจแล้ว <span className="font-semibold text-gray-700">{stats.assigned}</span> / {stats.total} แปลง
-        {stats.unassigned.length > 0 && (
-          <span className="ml-1 text-amber-600 font-medium">(เหลือ {stats.unassigned.length})</span>
-        )}
-      </div>
-
-      {/* Batch tools */}
-      <div className="px-3 py-2 border-t border-gray-200">
-        <button onClick={() => setShowBatch(!showBatch)}
-          className="w-full text-xs text-left font-semibold text-gray-700 flex items-center justify-between hover:text-blue-600 transition-colors">
-          <span>⚡ เครื่องมือกำหนดเป็นชุด</span>
-          <span className="text-[10px]">{showBatch ? '▲' : '▼'}</span>
-        </button>
-
-        {showBatch && (
-          <div className="mt-2 space-y-2">
-            <div>
-              <label className="block text-[10px] text-gray-500 mb-1">ประเภทที่ต้องการกำหนด</label>
-              <select value={bulkType} onChange={(e) => setBulkType(e.target.value)}
-                className="w-full text-xs border border-gray-300 rounded-lg py-1.5 px-2 focus:outline-none focus:ring-1 focus:ring-green-500">
-                {LAND_USE_TYPES.map((t) => (
-                  <option key={t.key} value={t.key}>{t.icon} {t.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <button onClick={() => handleBulk(stats.unassigned)} disabled={bulkBusy || stats.unassigned.length === 0}
-              className="w-full px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
-              {bulkBusy ? '⏳ กำลังดำเนินการ...' : `🌾 กำหนดแปลงที่เหลือ (${stats.unassigned.length} แปลง)`}
-            </button>
-
-            <div className="flex gap-1.5">
-              {LAND_USE_TYPES.slice(0, 4).map((fromType) => {
-                const codesOfType = allParcelCodes.filter((c) => {
-                  const arr = normalizeLU(assignments[c]);
-                  return arr.length > 0 && arr[0] === fromType.key;
-                });
-                if (codesOfType.length === 0 || fromType.key === bulkType) return null;
-                return (
-                  <button key={fromType.key}
-                    onClick={() => {
-                      const t = LAND_USE_MAP[bulkType];
-                      const label = t ? `${t.icon} ${t.label}` : bulkType;
-                      if (!window.confirm(`เปลี่ยน "${fromType.icon} ${fromType.label}" (${codesOfType.length} แปลง) → "${label}"?`)) return;
-                      setBulkBusy(true);
-                      onBulkAssign(codesOfType, bulkType).finally(() => setBulkBusy(false));
-                    }}
-                    disabled={bulkBusy}
-                    className="flex-1 px-1 py-1.5 text-[10px] rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors disabled:opacity-40 text-center"
-                    title={`เปลี่ยน ${fromType.label} → ${LAND_USE_MAP[bulkType]?.label}`}>
-                    {fromType.icon}→{LAND_USE_MAP[bulkType]?.icon}<br /><span className="text-gray-400">{codesOfType.length}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+    <div className="flex items-center gap-1.5 py-1.5 justify-between">
+      <span className="text-xs font-medium flex items-center gap-1 w-28 truncate" style={{ color }} title={label}>
+        <span>{icon}</span> <span>{label}</span>
+      </span>
+      <div className="flex items-center gap-1 flex-1 justify-end">
+        <input type="text" inputMode="numeric" value={localRai} onChange={(e) => handleChange('rai', e.target.value)} placeholder="ไร่" className={inputCls} />
+        <span className="text-gray-300 text-[10px]">-</span>
+        <input type="text" inputMode="numeric" value={localNgan} onChange={(e) => handleChange('ngan', e.target.value)} placeholder="งาน" className="w-10 text-center text-xs border border-gray-200 rounded-lg py-1 px-1.5 focus:outline-none focus:ring-1 focus:ring-green-400" />
+        <span className="text-gray-300 text-[10px]">-</span>
+        <input type="text" inputMode="decimal" value={localWah} onChange={(e) => handleChange('wah', e.target.value)} placeholder="วา" className={inputCls} />
+        {onAutoFill && remainWah > 0 && (
+          <button onClick={onAutoFill} className="ml-1 px-2 py-1 bg-green-50 text-green-700 text-[10px] font-bold rounded-lg hover:bg-green-100 transition-colors flex-shrink-0" title="เติมเนื้อที่คงเหลือ">
+            Auto
+          </button>
         )}
       </div>
     </div>
@@ -830,7 +534,6 @@ const LandUseLegend = ({ assignments, allParcelCodes, parcelAreaMap, onClose, on
 };
 
 /* ─────────────── Attribute Table ─────────────── */
-
 const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAssignments, onUpdateFeature, onDeleteFeature, onBulkAssign }) => {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
@@ -992,61 +695,77 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
   if (!layer) return null;
 
   return (
-    <div className="relative h-full bg-white">
-      <div className="absolute inset-0 flex flex-col">
-      <div className="px-4 py-2 border-b border-gray-200 flex items-center justify-between flex-shrink-0 bg-gray-50">
+    <div className="relative h-full bg-white flex flex-col">
+      {/* Control Header */}
+      <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3 bg-gray-50/50 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: layer.color }} />
-            <h3 className="text-sm font-semibold text-gray-800 truncate max-w-[200px]" title={layer.name}>{layer.name}</h3>
+          <div className="flex items-center gap-2">
+            <div className="w-3.5 h-3.5 rounded-full shadow-sm" style={{ backgroundColor: layer.color }} />
+            <h3 className="text-sm font-bold text-gray-800 truncate max-w-[200px]" title={layer.name}>{layer.name}</h3>
           </div>
-          <span className="text-xs text-gray-500">{sorted.length === features.length ? `${features.length} แถว` : `${sorted.length} / ${features.length} แถว`}</span>
-          {onUpdateFeature && <span className="text-[10px] text-blue-400">ดับเบิลคลิกเพื่อแก้ไข</span>}
+          <span className="text-xs text-gray-500 font-medium">
+            {sorted.length === features.length ? `${features.length} รายการ` : `${sorted.length} จาก ${features.length} รายการ`}
+          </span>
+          {onUpdateFeature && <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-semibold">ดับเบิลคลิกช่องเพื่อแก้ไข</span>}
         </div>
-        <div className="flex items-center gap-2">
+        
+        <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
           {blockIdOptions.length > 0 && (
-            <select value={filterBlockId} onChange={(e) => setFilterBlockId(e.target.value)} className="text-xs border border-gray-300 rounded-md py-1 px-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
-              <option value="all">block_id: ทั้งหมด</option>
+            <select value={filterBlockId} onChange={(e) => setFilterBlockId(e.target.value)} className="select select-bordered select-xs text-xs font-semibold focus:outline-none">
+              <option value="all">บล็อกทั้งหมด</option>
               {blockIdOptions.map((id) => (<option key={id} value={id}>{id}</option>))}
             </select>
           )}
           {surveyMode && (
-            <select value={filterLandUse} onChange={(e) => setFilterLandUse(e.target.value)} className="text-xs border border-gray-300 rounded-md py-1 px-2 focus:outline-none focus:ring-1 focus:ring-green-500">
-              <option value="all">ทั้งหมด</option>
+            <select value={filterLandUse} onChange={(e) => setFilterLandUse(e.target.value)} className="select select-bordered select-xs text-xs font-semibold focus:outline-none">
+              <option value="all">การใช้ประโยชน์ทั้งหมด</option>
               <option value="unassigned">ยังไม่สำรวจ</option>
               {LAND_USE_TYPES.map((t) => (<option key={t.key} value={t.key}>{t.icon} {t.label}</option>))}
             </select>
           )}
           <div className="relative">
-            <input type="text" placeholder="ค้นหา..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-7 pr-3 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 w-40" />
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+            <input type="text" placeholder="ค้นหา..." value={search} onChange={(e) => setSearch(e.target.value)} className="input input-bordered input-xs pl-7 pr-3 text-xs w-40 focus:outline-none" />
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
           </div>
-          <button onClick={onClose} className="px-2 py-1 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded text-sm" title="ปิดตาราง">✕</button>
+          <button onClick={onClose} className="btn btn-circle btn-ghost btn-xs text-gray-400 hover:text-gray-600" title="ปิดตาราง">
+            <X size={14} />
+          </button>
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-auto">
+      {/* Grid Container */}
+      <div className="flex-1 overflow-auto">
         {columns.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-gray-400 text-sm">ไม่มีข้อมูล properties</div>
+          <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
+            <Info size={32} className="stroke-current opacity-40" />
+            <span className="text-xs font-semibold">ไม่พบข้อมูลคุณสมบัติ (Properties)</span>
+          </div>
         ) : (
-          <table className="w-full text-xs border-collapse">
-            <thead className="sticky top-0 z-10">
-              <tr className="bg-gray-100">
+          <table className="table table-xs table-pin-rows table-pin-cols w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-100/80">
                 {surveyMode && onBulkAssign && (
-                  <th className="px-2 py-2 text-center border-b border-r border-gray-200 w-8">
+                  <th className="text-center w-10">
                     <input type="checkbox" checked={allPageChecked} ref={(el) => { if (el) el.indeterminate = somePageChecked && !allPageChecked; }}
-                      onChange={togglePageAll} className="w-3.5 h-3.5 rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer" title="เลือกทั้งหน้า" />
+                      onChange={togglePageAll} className="checkbox checkbox-xs checkbox-primary" title="เลือกทั้งหน้า" />
                   </th>
                 )}
-                <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b border-r border-gray-200 w-10">#</th>
-                {surveyMode && <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b border-r border-gray-200 min-w-[180px]">การใช้ที่ดิน / เนื้อที่</th>}
+                <th className="w-12 text-center text-[10px] uppercase font-bold text-gray-500">#</th>
+                {surveyMode && <th className="min-w-[160px] text-left text-[10px] uppercase font-bold text-gray-500">การใช้ที่ดิน / สัดส่วนเนื้อที่</th>}
                 {columns.map((col) => (
-                  <th key={col} onClick={() => handleSort(col)} className="px-3 py-2 text-left font-semibold text-gray-600 border-b border-r border-gray-200 cursor-pointer hover:bg-gray-200 whitespace-nowrap select-none">
-                    {col}{sortCol === col && <span className="ml-1 text-blue-500">{sortAsc ? '▲' : '▼'}</span>}
+                  <th key={col} onClick={() => handleSort(col)} className="cursor-pointer hover:bg-gray-200 select-none whitespace-nowrap text-[10px] uppercase font-bold text-gray-500 group">
+                    <div className="flex items-center gap-1">
+                      <span>{col}</span>
+                      {sortCol === col ? (
+                        <span className="text-blue-600">{sortAsc ? '▲' : '▼'}</span>
+                      ) : (
+                        <span className="opacity-0 group-hover:opacity-100 text-gray-400"><ArrowUpDown size={10} /></span>
+                      )}
+                    </div>
                   </th>
                 ))}
-                <th className="px-3 py-2 text-center font-semibold text-gray-600 border-b border-r border-gray-200 w-10">📍</th>
-                {onDeleteFeature && <th className="px-3 py-2 text-center font-semibold text-gray-600 border-b border-gray-200 w-10">🗑️</th>}
+                <th className="text-center w-12 text-[10px] font-bold text-gray-500">ซูม</th>
+                {onDeleteFeature && <th className="text-center w-12 text-[10px] font-bold text-gray-500">ลบ</th>}
               </tr>
             </thead>
             <tbody>
@@ -1058,32 +777,34 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
 
                 return (
                   <tr key={globalIdx} onClick={() => handleRowClick(feature, idx)}
-                    className={`cursor-pointer transition-colors ${checkedCodes.has(code) ? 'bg-green-50' : isSelected ? 'bg-blue-100' : idx % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50/50 hover:bg-gray-100'}`}>
+                    className={`cursor-pointer transition-colors border-b border-gray-100 hover:bg-gray-50 ${checkedCodes.has(code) ? 'bg-green-50/50 hover:bg-green-100/50' : isSelected ? 'bg-blue-50 hover:bg-blue-100/70' : ''}`}>
                     {surveyMode && onBulkAssign && (
-                      <td className="px-2 py-1.5 text-center border-r border-gray-100">
+                      <td className="text-center">
                         {code ? (
                           <input type="checkbox" checked={checkedCodes.has(code)} onChange={(e) => toggleCheck(code, e)}
-                            className="w-3.5 h-3.5 rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer" />
+                            className="checkbox checkbox-xs checkbox-primary" />
                         ) : <span className="text-gray-300">—</span>}
                       </td>
                     )}
-                    <td className="px-3 py-1.5 text-gray-400 border-r border-gray-100 font-mono">{globalIdx + 1}</td>
+                    <td className="text-center text-gray-400 font-mono text-[10px] font-semibold">{globalIdx + 1}</td>
                     {surveyMode && (
-                      <td className="px-1.5 py-1 border-r border-gray-100" onClick={(e) => e.stopPropagation()}>
+                      <td onClick={(e) => e.stopPropagation()}>
                         {luData.types.length === 0 ? (
-                          <span className="text-gray-300 text-[10px]">— ยังไม่สำรวจ</span>
+                          <span className="text-gray-400 text-[10px] italic">ยังไม่สำรวจ</span>
                         ) : (
-                          <div className="flex flex-wrap gap-0.5">
+                          <div className="flex flex-wrap gap-1">
                             {luData.types.map((key, i) => {
                               const t = LAND_USE_MAP[key];
                               if (!t) return null;
                               const areaStr = luData.areas[key];
                               return (
                                 <span key={key}
-                                  className={`inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-medium ${i === 0 ? 'ring-1 ring-offset-0' : 'opacity-80'}`}
+                                  className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${i === 0 ? 'ring-1 ring-offset-0' : 'opacity-85'}`}
                                   style={{ backgroundColor: t.fillColor, color: t.color, ringColor: i === 0 ? t.color : undefined }}
                                   title={`${t.label}${areaStr ? ` (${areaStr})` : ''}${i === 0 ? ' (หลัก)' : ''}`}>
-                                  {t.icon}{i === 0 && '★'}{areaStr && <span className="ml-0.5 opacity-80">{areaStr}</span>}
+                                  <span>{t.icon}</span>
+                                  <span>{t.label}</span>
+                                  {areaStr && <span className="ml-1 opacity-70 font-semibold">{areaStr}</span>}
                                 </span>
                               );
                             })}
@@ -1097,26 +818,26 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
                       const isEditing = editCell && editCell.featureIdx === realIdx && editCell.col === col;
 
                       return (
-                        <td key={col} className="px-3 py-1.5 border-r border-gray-100 max-w-[200px]"
+                        <td key={col} className="max-w-[200px]"
                           title={!isEditing ? (val != null ? String(val) : '') : undefined}
                           onDoubleClick={(e) => onUpdateFeature && startCellEdit(realIdx, col, val, e)}>
                           {isEditing ? (
                             <input type="text" value={editValue} onChange={(e) => setEditValue(e.target.value)}
                               onBlur={commitCellEdit} onKeyDown={handleEditKeyDown} autoFocus
-                              className="w-full px-1 py-0.5 text-xs border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-blue-50" />
+                              className="input input-bordered input-xs w-full text-xs font-semibold focus:outline-none bg-blue-50/50" />
                           ) : (
-                            <span className={`block truncate ${onUpdateFeature ? 'cursor-text' : ''}`}>
+                            <span className={`block truncate ${onUpdateFeature ? 'cursor-text font-medium text-gray-700' : 'text-gray-600'}`}>
                               {val != null ? String(val) : <span className="text-gray-300">—</span>}
                             </span>
                           )}
                         </td>
                       );
                     })}
-                    <td className="px-3 py-1.5 text-center border-r border-gray-100">
-                      <button onClick={(e) => { e.stopPropagation(); handleRowClick(feature, idx); }} className="text-blue-500 hover:text-blue-700" title="ซูมไปที่ feature">📍</button>
+                    <td className="text-center">
+                      <button onClick={(e) => { e.stopPropagation(); handleRowClick(feature, idx); }} className="btn btn-ghost btn-xs btn-circle text-blue-500 hover:bg-blue-50" title="ซูมไปที่ feature">📍</button>
                     </td>
                     {onDeleteFeature && (
-                      <td className="px-3 py-1.5 text-center">
+                      <td className="text-center">
                         <button onClick={(e) => {
                           e.stopPropagation();
                           const realIdx = features.indexOf(feature);
@@ -1126,7 +847,9 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
                             onDeleteFeature(realIdx);
                             setSelectedRow(null);
                           }
-                        }} className="text-gray-400 hover:text-red-600 transition-colors" title="ลบแปลงนี้">🗑️</button>
+                        }} className="btn btn-ghost btn-xs btn-circle text-gray-400 hover:text-red-600 hover:bg-red-50" title="ลบแปลงนี้">
+                          <Trash2 size={12} />
+                        </button>
                       </td>
                     )}
                   </tr>
@@ -1137,34 +860,40 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
         )}
       </div>
 
+      {/* Bulk Edit Actions */}
       {surveyMode && onBulkAssign && checkedCodes.size > 0 && (
-        <div className="px-3 py-2 border-t-2 border-green-400 bg-green-50 flex items-center gap-3 flex-shrink-0">
-          <span className="text-xs font-semibold text-green-800">✅ เลือก {checkedCodes.size} แปลง</span>
-          {allFilteredCodes.length > checkedCodes.size && (
-            <button onClick={selectAllFiltered} className="text-[10px] text-green-700 underline hover:text-green-900">
-              เลือกทั้งหมด ({allFilteredCodes.length})
+        <div className="px-4 py-3 border-t-2 border-green-500 bg-green-50/80 flex items-center justify-between flex-shrink-0 animate-fade-in gap-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={16} className="text-green-600" />
+            <span className="text-xs font-bold text-green-800">เลือกทั้งหมด {checkedCodes.size} แปลง</span>
+            {allFilteredCodes.length > checkedCodes.size && (
+              <button onClick={selectAllFiltered} className="text-[10px] font-bold text-green-700 underline hover:text-green-900 ml-1">
+                เลือกทั้งหมดในตัวกรอง ({allFilteredCodes.length} แปลง)
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <select value={bulkType} onChange={(e) => setBulkType(e.target.value)}
+              className="select select-bordered select-xs text-xs font-semibold bg-white focus:outline-none">
+              {LAND_USE_TYPES.map((t) => (
+                <option key={t.key} value={t.key}>{t.icon} {t.label}</option>
+              ))}
+            </select>
+            <button onClick={handleBulkAssign}
+              className="btn btn-success btn-xs text-white font-bold shadow-sm">
+              กำหนดประเภทที่ดิน
             </button>
-          )}
-          <div className="flex-1" />
-          <select value={bulkType} onChange={(e) => setBulkType(e.target.value)}
-            className="text-xs border border-green-300 rounded-lg py-1 px-2 bg-white focus:outline-none focus:ring-1 focus:ring-green-500">
-            {LAND_USE_TYPES.map((t) => (
-              <option key={t.key} value={t.key}>{t.icon} {t.label}</option>
-            ))}
-          </select>
-          <button onClick={handleBulkAssign}
-            className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors shadow-sm">
-            🌾 กำหนดประเภท
-          </button>
-          <button onClick={clearChecked} className="text-xs text-gray-500 hover:text-gray-700">ยกเลิก</button>
+            <button onClick={clearChecked} className="btn btn-ghost btn-xs text-xs text-gray-500">ยกเลิก</button>
+          </div>
         </div>
       )}
 
-      <div className="px-4 py-2 border-t border-gray-200 flex items-center justify-between flex-shrink-0 bg-gray-50 text-xs">
-        <div className="flex items-center gap-2">
-          <span className="text-gray-500">แสดง {page * pageSize + 1}–{Math.min((page + 1) * pageSize, sorted.length)} จาก {sorted.length}</span>
+      {/* Pagination Footer */}
+      <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/50 text-xs">
+        <div className="flex items-center gap-3">
+          <span className="text-gray-500 font-medium">แสดง {page * pageSize + 1}–{Math.min((page + 1) * pageSize, sorted.length)} จาก {sorted.length} แถว</span>
           <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}
-            className="border border-gray-300 rounded py-0.5 px-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500">
+            className="select select-bordered select-xs h-7 text-xs font-semibold focus:outline-none">
             {PAGE_SIZE_OPTIONS.map((n) => (
               <option key={n} value={n}>{n} แถว/หน้า</option>
             ))}
@@ -1172,7 +901,7 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
         </div>
         {totalPages > 1 && (() => {
           const pages = [];
-          const maxButtons = 7;
+          const maxButtons = 5;
           let start = Math.max(0, page - Math.floor(maxButtons / 2));
           let end = Math.min(totalPages, start + maxButtons);
           if (end - start < maxButtons) start = Math.max(0, end - maxButtons);
@@ -1180,17 +909,17 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
           for (let i = start; i < end; i++) pages.push(i);
 
           return (
-            <div className="flex items-center gap-0.5">
+            <div className="flex items-center gap-1">
               <button onClick={() => setPage(0)} disabled={page === 0}
-                className={`px-2 py-1 rounded ${page === 0 ? 'text-gray-300 cursor-default' : 'text-gray-600 hover:bg-gray-200'}`}>«</button>
+                className="btn btn-xs btn-outline px-1.5 h-7 min-h-0 disabled:opacity-30">«</button>
               <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}
-                className={`px-2 py-1 rounded ${page === 0 ? 'text-gray-300 cursor-default' : 'text-gray-600 hover:bg-gray-200'}`}>‹</button>
+                className="btn btn-xs btn-outline px-1.5 h-7 min-h-0 disabled:opacity-30">‹</button>
 
               {start > 0 && <span className="px-1 text-gray-400">...</span>}
 
               {pages.map((i) => (
                 <button key={i} onClick={() => setPage(i)}
-                  className={`min-w-[28px] px-1.5 py-1 rounded font-medium ${i === page ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}>
+                  className={`btn btn-xs min-w-[28px] h-7 min-h-0 font-bold ${i === page ? 'btn-primary text-white shadow-sm' : 'btn-ghost text-gray-600 hover:bg-gray-200'}`}>
                   {i + 1}
                 </button>
               ))}
@@ -1198,27 +927,366 @@ const AttributeTable = ({ layer, onClose, onZoomToFeature, surveyMode, landUseAs
               {end < totalPages && <span className="px-1 text-gray-400">...</span>}
 
               <button onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
-                className={`px-2 py-1 rounded ${page >= totalPages - 1 ? 'text-gray-300 cursor-default' : 'text-gray-600 hover:bg-gray-200'}`}>›</button>
+                className="btn btn-xs btn-outline px-1.5 h-7 min-h-0 disabled:opacity-30">›</button>
               <button onClick={() => setPage(totalPages - 1)} disabled={page >= totalPages - 1}
-                className={`px-2 py-1 rounded ${page >= totalPages - 1 ? 'text-gray-300 cursor-default' : 'text-gray-600 hover:bg-gray-200'}`}>»</button>
+                className="btn btn-xs btn-outline px-1.5 h-7 min-h-0 disabled:opacity-30">»</button>
             </div>
           );
         })()}
-      </div>
       </div>
     </div>
   );
 };
 
-/* ─────────────── TaxMapView ─────────────── */
+/* ─────────────── Parcel Inspector Panel ─────────────── */
+const ParcelInspectorPanel = ({ parcelCode, currentTypes, currentAreas, totalArea, properties, onAssign, onClose }) => {
+  const [selected, setSelected] = useState(currentTypes || []);
+  const [areas, setAreas] = useState(currentAreas || {});
+  const [showMetadata, setShowMetadata] = useState(false);
 
-const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
+  useEffect(() => {
+    setSelected(currentTypes || []);
+    setAreas(currentAreas || {});
+  }, [currentTypes, currentAreas]);
+
+  const totalWah = parseAreaToWah(totalArea);
+  const usedWah = selected.reduce((sum, key) => sum + parseAreaToWah(areas[key]), 0);
+  const remainWah = totalWah - usedWah;
+  const isOverLimit = totalWah > 0 && usedWah > totalWah;
+
+  const toggle = (key) => {
+    setSelected((prev) => {
+      if (prev.includes(key)) {
+        const next = prev.filter((k) => k !== key);
+        setAreas((a) => { const copy = { ...a }; delete copy[key]; return copy; });
+        return next;
+      }
+      return [...prev, key];
+    });
+  };
+
+  const setPrimary = (key) => {
+    setSelected((prev) => {
+      if (!prev.includes(key)) return [key, ...prev];
+      return [key, ...prev.filter((k) => k !== key)];
+    });
+  };
+
+  const handleAreaChange = (key, val) => {
+    setAreas((prev) => ({ ...prev, [key]: val }));
+  };
+
+  const autoFillRemain = (key) => {
+    const otherUsed = selected.reduce((sum, k) => k === key ? sum : sum + parseAreaToWah(areas[k]), 0);
+    const remaining = totalWah - otherUsed;
+    if (remaining > 0) {
+      setAreas((prev) => ({ ...prev, [key]: wahToAreaStr(remaining) }));
+    }
+  };
+
+  const handleSave = () => {
+    const cleanAreas = {};
+    Object.entries(areas).forEach(([k, v]) => {
+      const n = normalizeAreaStr(v);
+      if (n) cleanAreas[k] = n;
+    });
+    onAssign({ types: selected, areas: cleanAreas });
+  };
+
+  const handleClear = () => {
+    onAssign({ types: [], areas: {} });
+  };
+
+  const primary = selected[0] || null;
+  const primaryType = primary ? LAND_USE_MAP[primary] : null;
+
+  return (
+    <motion.div
+      initial={{ x: 100, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: 100, opacity: 0 }}
+      transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+      className="absolute top-4 right-4 z-[900] w-80 md:w-96 bg-white/95 backdrop-blur-md rounded-2xl border border-gray-200/80 shadow-2xl flex flex-col max-h-[calc(100vh-32px)] overflow-hidden font-sans"
+    >
+      {/* Header */}
+      <div className="px-4 py-3.5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+        <div>
+          <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">แผงรายละเอียดแปลงที่ดิน</span>
+          <h4 className="text-sm font-bold text-gray-800 truncate" title={parcelCode || 'ไม่ทราบรหัสแปลง'}>
+            📍 {parcelCode || '—'}
+          </h4>
+        </div>
+        <button onClick={onClose} className="btn btn-circle btn-ghost btn-xs text-gray-400 hover:text-gray-600">
+          <X size={16} />
+        </button>
+      </div>
+
+      {/* Content Area */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Total Area Card */}
+        {totalArea ? (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-3.5 flex items-center justify-between">
+            <div>
+              <span className="text-[10px] text-blue-600 font-bold uppercase">เนื้อที่ตามโฉนด</span>
+              <p className="text-lg font-extrabold text-blue-900 font-mono tracking-tight">{totalArea}</p>
+            </div>
+            <div className="text-right">
+              <span className="text-[10px] text-gray-400 font-medium">คำนวณตร.ม.</span>
+              <p className="text-xs font-bold text-gray-600 font-mono">{(parseAreaToWah(totalArea) * SQM_PER_WAH).toLocaleString('th-TH')} ตร.ม.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="alert alert-warning p-2.5 rounded-xl text-xs gap-1">
+            <AlertTriangle size={14} />
+            <span>แปลงนี้ไม่มีข้อมูลระบุเนื้อที่รวม</span>
+          </div>
+        )}
+
+        {/* Collapsible Metadata attributes */}
+        {properties && (
+          <div className="border border-gray-100 rounded-xl overflow-hidden">
+            <button onClick={() => setShowMetadata(!showMetadata)}
+              className="w-full px-3 py-2 bg-gray-50 flex items-center justify-between text-xs font-bold text-gray-600 hover:bg-gray-100 transition-colors">
+              <span>📋 ข้อมูลคุณสมบัติอื่น ๆ ({Object.keys(properties).length})</span>
+              <span>{showMetadata ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</span>
+            </button>
+            <AnimatePresence>
+              {showMetadata && (
+                <motion.div
+                  initial={{ height: 0 }}
+                  animate={{ height: 'auto' }}
+                  exit={{ height: 0 }}
+                  className="overflow-hidden bg-white text-xs"
+                >
+                  <div className="p-2.5 max-h-48 overflow-y-auto divide-y divide-gray-50">
+                    {Object.entries(properties).map(([k, v]) => (
+                      <div key={k} className="flex justify-between py-1">
+                        <span className="text-gray-400 font-medium">{k}</span>
+                        <span className="text-gray-800 font-semibold text-right max-w-[60%] truncate" title={String(v)}>{String(v)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
+        {/* Land Use Assignment Selection */}
+        <div className="space-y-2">
+          <span className="text-xs font-bold text-gray-700 block">🌾 เลือกประเภทการใช้ประโยชน์ที่ดิน:</span>
+          
+          <div className="grid grid-cols-2 gap-1.5">
+            {LAND_USE_TYPES.map((type) => {
+              const isSelected = selected.includes(type.key);
+              return (
+                <button key={type.key} onClick={() => toggle(type.key)}
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all border ${isSelected ? 'shadow-sm border-current font-bold' : 'border-gray-200/60 hover:bg-gray-50 text-gray-600'}`}
+                  style={{ backgroundColor: isSelected ? type.fillColor : undefined, color: isSelected ? type.color : undefined }}>
+                  <span className="text-sm">{type.icon}</span>
+                  <span className="truncate">{type.label}</span>
+                  {isSelected && <span className="ml-auto text-[10px] font-bold">✓</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Areas allocation inputs */}
+        {selected.length > 0 && (
+          <div className="border border-gray-100 rounded-2xl p-3.5 bg-gray-50/50 space-y-2.5 animate-fade-in">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-gray-700">📏 แบ่งสัดส่วนสถิติการใช้งาน:</span>
+              {selected.length > 1 && (
+                <span className="text-[9px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full font-bold">หลายประเภท (ประเภทแรกคือหลัก)</span>
+              )}
+            </div>
+            
+            {/* Primary badge tags indicator */}
+            {selected.length > 1 && (
+              <div className="flex flex-wrap gap-1 py-1.5 border-b border-gray-100">
+                {selected.map((key, i) => {
+                  const t = LAND_USE_MAP[key];
+                  if (!t) return null;
+                  return (
+                    <button key={key} onClick={() => setPrimary(key)}
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold transition-all border ${i === 0 ? 'border-current shadow-sm' : 'border-gray-200 opacity-60 hover:opacity-100'}`}
+                      style={{ backgroundColor: t.fillColor, color: t.color }}>
+                      {t.icon} {t.label} {i === 0 && '★'}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="divide-y divide-gray-100/50">
+              {selected.map((key) => {
+                const t = LAND_USE_MAP[key];
+                if (!t) return null;
+                const otherUsed = selected.reduce((sum, k) => k === key ? sum : sum + parseAreaToWah(areas[k]), 0);
+                return (
+                  <AreaInput key={key} label={t.label} icon={t.icon} color={t.color}
+                    value={areas[key] || ''} onChange={(v) => handleAreaChange(key, v)}
+                    onAutoFill={totalWah > 0 ? () => autoFillRemain(key) : undefined}
+                    remainWah={totalWah > 0 ? totalWah - otherUsed : 0} />
+                );
+              })}
+            </div>
+
+            {/* Allocation calculator summary */}
+            {totalWah > 0 && (
+              <div className={`p-2.5 rounded-xl border text-xs space-y-1.5 transition-colors ${isOverLimit ? 'bg-red-50/70 border-red-200 text-red-700' : 'bg-white border-gray-100 text-gray-600'}`}>
+                <div className="flex justify-between font-semibold font-mono text-[11px]">
+                  <span>ใช้ไป: <b>{wahToAreaStr(usedWah)}</b></span>
+                  <span>คงเหลือ: <b className={isOverLimit ? 'text-red-600' : remainWah > 0 ? 'text-green-600' : 'text-gray-600'}>{wahToAreaStr(Math.max(0, remainWah))}</b></span>
+                </div>
+                {isOverLimit && (
+                  <div className="flex items-center gap-1 text-[10px] font-bold text-red-600">
+                    <AlertTriangle size={12} />
+                    <span>เนื้อที่เกินขนาดรวม {wahToAreaStr(usedWah - totalWah)}!</span>
+                  </div>
+                )}
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full transition-all duration-300"
+                    style={{ width: `${Math.min(100, (usedWah / totalWah) * 100)}%`, backgroundColor: isOverLimit ? '#ef4444' : '#22c55e' }} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Footer Actions */}
+      <div className="px-4 py-3 border-t border-gray-100 flex items-center gap-2 bg-gray-50/80">
+        <button onClick={handleSave} disabled={isOverLimit}
+          className="flex-1 btn btn-success text-white font-bold shadow-md hover:shadow-lg disabled:opacity-40">
+          <Save size={14} />
+          {primaryType ? `บันทึก (${primaryType.icon} ${selected.length > 1 ? `+${selected.length - 1}` : primaryType.label})` : 'บันทึกข้อมูล'}
+        </button>
+        {selected.length > 0 && (
+          <button onClick={handleClear} className="btn btn-outline btn-error font-bold">ล้าง</button>
+        )}
+      </div>
+    </motion.div>
+  );
+};
+
+/* ─────────────── Step-by-Step Upload Assistant ─────────────── */
+const GeoJSONUploadAssistant = ({ file, onSave, onCancel, loading }) => {
+  const [layerName, setLayerName] = useState('');
+  const [selectedColor, setSelectedColor] = useState(LAYER_COLORS[0]);
+  const [featureCount, setFeatureCount] = useState(0);
+
+  useEffect(() => {
+    if (!file) return;
+    const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+    setLayerName(nameWithoutExt);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const parsed = JSON.parse(e.target.result);
+        const count = parsed.features?.length || (parsed.type === 'Feature' ? 1 : 0);
+        setFeatureCount(count);
+      } catch {
+        setFeatureCount(0);
+      }
+    };
+    reader.readAsText(file);
+  }, [file]);
+
+  if (!file) return null;
+
+  const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+
+  return (
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 backdrop-blur-xs font-sans px-4">
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-md w-full overflow-hidden flex flex-col"
+      >
+        {/* Header */}
+        <div className="px-5 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center gap-2">
+          <UploadCloud size={20} />
+          <div>
+            <h3 className="font-bold text-sm">ตัวช่วยอัปโหลดเลเยอร์ GeoJSON</h3>
+            <p className="text-[10px] text-white/80">ตั้งค่าสไตล์ข้อมูลแผนที่ก่อนเริ่มนำเข้า</p>
+          </div>
+        </div>
+
+        {/* File Detail Body */}
+        <div className="p-5 space-y-4">
+          <div className="bg-gray-50 border border-gray-100 rounded-xl p-3.5 space-y-2.5">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">ข้อมูลไฟล์ที่ตรวจพบ</span>
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">ชื่อไฟล์เดิม:</span>
+              <span className="font-semibold text-gray-800 truncate max-w-[200px]" title={file.name}>{file.name}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">ขนาดไฟล์:</span>
+              <span className="font-mono font-semibold text-gray-800">{fileSizeMB} MB</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">จำนวนรูปแปลง:</span>
+              <span className="badge badge-indigo badge-sm font-bold">{featureCount} แปลง (Features)</span>
+            </div>
+          </div>
+
+          {/* Name input */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold text-gray-600">🏷️ ตั้งชื่อเลเยอร์ที่ดิน:</label>
+            <input type="text" value={layerName} onChange={(e) => setLayerName(e.target.value)}
+              className="input input-bordered input-sm w-full text-xs font-semibold focus:outline-none"
+              placeholder="ตั้งชื่อเลเยอร์ เช่น แปลงที่ดินหมู่ 4" />
+          </div>
+
+          {/* Color palette selector */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold text-gray-600">🎨 เลือกจานสีแผนที่ (Layer Color):</label>
+            <div className="flex flex-wrap gap-2.5 pt-1">
+              {LAYER_COLORS.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setSelectedColor(c)}
+                  className={`w-7 h-7 rounded-full border-2 transition-all shadow-sm hover:scale-110 ${selectedColor === c ? 'border-gray-800 ring-2 ring-blue-300' : 'border-white'}`}
+                  style={{ backgroundColor: c }}
+                  title={c}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer actions */}
+        <div className="px-5 py-4 bg-gray-50/50 border-t border-gray-100 flex items-center gap-2.5 justify-end">
+          <button onClick={onCancel} disabled={loading} className="btn btn-ghost btn-sm text-xs font-bold">
+            ยกเลิก
+          </button>
+          <button
+            onClick={() => onSave(layerName, selectedColor)}
+            disabled={loading || !layerName.trim()}
+            className="btn btn-primary btn-sm text-white font-bold min-w-[100px] shadow-md">
+            {loading ? (
+              <span className="loading loading-spinner loading-xs"></span>
+            ) : (
+              <>นำเข้าเลเยอร์</>
+            )}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+/* ─────────────── Main Component (TaxMapView) ─────────────── */
+const TaxMapView = forwardRef(({}, ref) => {
   const [mapKey, setMapKey] = useState(0);
   const [mapInstance, setMapInstance] = useState(null);
   const [geojsonLayers, setGeojsonLayers] = useState([]);
   const [uploadError, setUploadError] = useState(null);
   const [uploadSuccess, setUploadSuccess] = useState(null);
-  const [showPanel, setShowPanel] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState(true);
   const [initialBounds, setInitialBounds] = useState(null);
@@ -1226,6 +1294,12 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
   const [tableLayerId, setTableLayerId] = useState(null);
   const [selectedFeature, setSelectedFeature] = useState(null);
   const [highlightKey, setHighlightKey] = useState(0);
+
+  const [surveyMode, setSurveyMode] = useState(false);
+  const [activeTab, setActiveTab] = useState('layers'); // 'layers', 'survey', 'tools'
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [uploadAssistantFile, setUploadAssistantFile] = useState(null);
+  const fileInputRef = useRef(null);
 
   const [landUseAssignments, setLandUseAssignments] = useState({});
   const [landUseVersion, setLandUseVersion] = useState(0);
@@ -1244,21 +1318,37 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
   const [measureResult, setMeasureResult] = useState(null);
   const [measureKey, setMeasureKey] = useState(0);
   const [measureNote, setMeasureNote] = useState('');
+  const [bulkType, setBulkType] = useState('agriculture');
   const [measureSaving, setMeasureSaving] = useState(false);
   const [colorPickerLayerId, setColorPickerLayerId] = useState(null);
   const [layerToDelete, setLayerToDelete] = useState(null);
   const measuringRef = useRef(false);
 
   const MEASUREMENTS_FILENAME = 'measurements.geojson';
-
   const defaultCenter = [13.7563, 100.5018];
   const defaultZoom = 12;
   const tableLayer = geojsonLayers.find((l) => l.id === tableLayerId) || null;
 
-  useEffect(() => { onLayerCountChange?.(geojsonLayers.length); }, [geojsonLayers.length, onLayerCountChange]);
+  // Invalidate map size on sidebar toggle and table display toggle
+  useEffect(() => {
+    if (mapInstance && !mapInstance._removed) {
+      const t = setTimeout(() => {
+        if (mapInstance && !mapInstance._removed && mapInstance._loaded && mapInstance._mapPane) {
+          try {
+            mapInstance.invalidateSize({ animate: true });
+          } catch (err) {
+            console.warn('Failed to invalidate map size:', err);
+          }
+        }
+      }, 350);
+      return () => clearTimeout(t);
+    }
+  }, [sidebarOpen, tableLayerId, mapInstance]);
+
   useEffect(() => { loadLandUseData(); }, []);
   useEffect(() => { if (surveyMode) setShowLegend(true); else { setShowLegend(false); setPopupInfo(null); } }, [surveyMode]);
   useEffect(() => { measuringRef.current = isMeasuring; }, [isMeasuring]);
+
   useEffect(() => {
     if (!colorPickerLayerId) return;
     const close = () => setColorPickerLayerId(null);
@@ -1367,7 +1457,7 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
         } catch { /* skip */ }
       }
       if (layers.length > 0) {
-        setGeojsonLayers(layers); setShowPanel(true);
+        setGeojsonLayers(layers);
         const combined = buildCombinedGeoJSON(layers);
         if (combined) setInitialBounds(combined);
         setMapKey((prev) => prev + 1);
@@ -1589,31 +1679,91 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
     try { const gl = L.geoJSON(feature); const b = gl.getBounds(); if (b.isValid()) mapInstance.fitBounds(b, { padding: [60, 60], maxZoom: 19, animate: true, duration: 0.8 }); } catch { /* ignore */ }
   }, [mapInstance]);
 
+  // Expose upload logic to the file input ref
   useImperativeHandle(ref, () => ({
     handleFileUpload: async (file) => {
-      if (!file) return;
-      setUploadError(null);
-      if (!file.name.toLowerCase().endsWith('.geojson') && !file.name.toLowerCase().endsWith('.json')) { showToast('กรุณาเลือกไฟล์ .geojson หรือ .json', 'error'); return; }
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        try {
-          const parsed = JSON.parse(event.target.result);
-          if (!parsed.type || !['FeatureCollection','Feature','Point','MultiPoint','LineString','MultiLineString','Polygon','MultiPolygon','GeometryCollection'].includes(parsed.type)) { showToast('ไฟล์ไม่ใช่ GeoJSON ที่ถูกต้อง', 'error'); return; }
-          setSaving(true);
-          try {
-            const saveRes = await fetch('/api/geojson', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: file.name, data: parsed }) });
-            const saveData = await saveRes.json();
-            if (!saveRes.ok) { showToast(`บันทึกไม่สำเร็จ: ${saveData.error}`, 'error'); return; }
-            setGeojsonLayers((prev) => [...prev, { id: Date.now(), name: saveData.filename, data: parsed, color: LAYER_COLORS[prev.length % LAYER_COLORS.length], visible: true, featureCount: parsed.features?.length || 1, savedOnServer: true }]);
-            setShowPanel(true); setFitTarget(parsed); setMapKey((prev) => prev + 1);
-            showToast(`บันทึก "${saveData.filename}" สำเร็จ`, 'success');
-          } catch { showToast('เกิดข้อผิดพลาดในการบันทึก', 'error'); } finally { setSaving(false); }
-        } catch { showToast('ไม่สามารถอ่านไฟล์ได้', 'error'); }
-      };
-      reader.readAsText(file);
+      triggerUploadAssistant(file);
     },
     saving,
   }));
+
+  const triggerUploadAssistant = (file) => {
+    if (!file) return;
+    setUploadError(null);
+    if (!file.name.toLowerCase().endsWith('.geojson') && !file.name.toLowerCase().endsWith('.json')) {
+      showToast('กรุณาเลือกไฟล์ .geojson หรือ .json', 'error');
+      return;
+    }
+    setUploadAssistantFile(file);
+  };
+
+  const handleUploadAssistantSave = async (layerName, color) => {
+    if (!uploadAssistantFile) return;
+    setSaving(true);
+
+    const file = uploadAssistantFile;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const parsed = JSON.parse(event.target.result);
+        if (!parsed.type || !['FeatureCollection','Feature','Point','MultiPoint','LineString','MultiLineString','Polygon','MultiPolygon','GeometryCollection'].includes(parsed.type)) {
+          showToast('ไฟล์ไม่ใช่ GeoJSON ที่ถูกต้อง', 'error');
+          setSaving(false);
+          return;
+        }
+
+        const safeFilename = layerName.trim().endsWith('.geojson') ? layerName.trim() : `${layerName.trim()}.geojson`;
+
+        try {
+          const saveRes = await fetch('/api/geojson', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: safeFilename, data: parsed })
+          });
+          const saveData = await saveRes.json();
+          if (!saveRes.ok) {
+            showToast(`บันทึกไม่สำเร็จ: ${saveData.error}`, 'error');
+            return;
+          }
+
+          // Save color configuration to server
+          const config = {};
+          geojsonLayers.forEach((l) => { config[l.name] = l.color; });
+          config[saveData.filename] = color;
+          try {
+            await fetch('/api/geojson-config', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ config }),
+            });
+          } catch { /* ignore */ }
+
+          setGeojsonLayers((prev) => [...prev, {
+            id: Date.now(),
+            name: saveData.filename,
+            data: parsed,
+            color: color,
+            visible: true,
+            featureCount: parsed.features?.length || 1,
+            savedOnServer: true
+          }]);
+
+          setFitTarget(parsed);
+          setMapKey((prev) => prev + 1);
+          showToast(`บันทึก "${saveData.filename}" สำเร็จ`, 'success');
+          setUploadAssistantFile(null);
+        } catch {
+          showToast('เกิดข้อผิดพลาดในการบันทึก', 'error');
+        } finally {
+          setSaving(false);
+        }
+      } catch {
+        showToast('ไม่สามารถอ่านไฟล์ได้', 'error');
+        setSaving(false);
+      }
+    };
+    reader.readAsText(file);
+  };
 
   const confirmRemoveLayer = async () => {
     if (!layerToDelete) return;
@@ -1690,7 +1840,6 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
       } else {
         const color = LAYER_COLORS[geojsonLayers.length % LAYER_COLORS.length];
         setGeojsonLayers((prev) => [...prev, { id: Date.now(), name: MEASUREMENTS_FILENAME, data, color, visible: true, featureCount: 1, savedOnServer: true }]);
-        setShowPanel(true);
       }
       setMeasureKey((k) => k + 1);
       setMeasureResult(null);
@@ -1707,12 +1856,12 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
     const code = getParcelCode(feature.properties);
     const arr = normalizeLU(code ? landUseAssignments[code] : null);
     const luType = arr[0] ? LAND_USE_MAP[arr[0]] : null;
-    if (luType) return { color: luType.color, weight: 2, fillColor: luType.fillColor, fillOpacity: 0.5 };
-    return { color: '#6b7280', weight: 1, fillColor: '#e5e7eb', fillOpacity: 0.15 };
+    if (luType) return { color: luType.color, weight: 2.5, fillColor: luType.fillColor, fillOpacity: 0.5 };
+    return { color: '#9ca3af', weight: 1.5, fillColor: '#f3f4f6', fillOpacity: 0.15 };
   }, [landUseAssignments]);
 
   const geoJsonStyle = useCallback((color) => () => ({ color, weight: 2, fillColor: color, fillOpacity: 0.2 }), []);
-  const editSelectStyle = useCallback(() => ({ color: '#f59e0b', weight: 2, fillColor: '#fef3c7', fillOpacity: 0.15, dashArray: '4,4' }), []);
+  const editSelectStyle = useCallback(() => ({ color: '#f59e0b', weight: 2.5, fillColor: '#fef3c7', fillOpacity: 0.15, dashArray: '4,4' }), []);
   const highlightStyle = { color: '#ef4444', weight: 4, fillColor: '#fbbf24', fillOpacity: 0.45 };
 
   const editingLayerRef = useRef(null);
@@ -1721,14 +1870,14 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
   const onEachFeature = useCallback((feature, layer) => {
     if (feature.properties) {
       const entries = Object.entries(feature.properties).filter(([, v]) => v !== null && v !== undefined && v !== '');
-      if (entries.length > 0) { layer.bindPopup(`<div class="text-xs leading-relaxed">${entries.slice(0, 10).map(([k, v]) => `<b>${k}:</b> ${v}`).join('<br/>')}</div>`, { maxWidth: 300 }); }
+      if (entries.length > 0) { layer.bindPopup(`<div class="text-xs leading-relaxed font-sans">${entries.slice(0, 10).map(([k, v]) => `<b>${k}:</b> ${v}`).join('<br/>')}</div>`, { maxWidth: 300 }); }
     }
   }, []);
 
   const onEachFeatureEditSelect = useCallback((feature, layer) => {
     const code = getParcelCode(feature.properties);
     const label = code || 'ไม่ทราบรหัส';
-    layer.bindTooltip(`คลิกเพื่อแก้ไข: ${label}`, { sticky: true, className: 'text-xs' });
+    layer.bindTooltip(`คลิกเพื่อแก้ไขรูปแปลง: ${label}`, { sticky: true, className: 'text-xs font-sans' });
 
     layer.on('click', () => {
       const ly = editingLayerRef.current;
@@ -1741,7 +1890,7 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
       layer.setStyle({ weight: 4, fillOpacity: 0.4, fillColor: '#fbbf24' });
     });
     layer.on('mouseout', () => {
-      layer.setStyle({ weight: 2, fillOpacity: 0.15, fillColor: '#fef3c7', dashArray: '4,4' });
+      layer.setStyle({ weight: 2.5, fillOpacity: 0.15, fillColor: '#fef3c7', dashArray: '4,4' });
     });
   }, []);
 
@@ -1756,11 +1905,11 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
         const badges = luData.types.map((key, i) => {
           const t = LAND_USE_MAP[key];
           const areaStr = luData.areas[key] ? ` (${luData.areas[key]})` : '';
-          return t ? `<span style="background:${t.fillColor};color:${t.color};padding:1px 4px;border-radius:3px;font-size:10px;">${t.icon} ${t.label}${areaStr}${i === 0 ? ' ★' : ''}</span>` : key;
+          return t ? `<span style="background:${t.fillColor};color:${t.color};padding:2px 6px;border-radius:99px;font-size:9px;font-weight:bold;margin-right:2px;display:inline-block;">${t.icon} ${t.label}${areaStr}${i === 0 ? ' ★' : ''}</span>` : key;
         }).join(' ');
-        html = `<div style="margin-bottom:4px;">${badges}</div>${html}`;
+        html = `<div style="margin-bottom:6px;border-bottom:1px solid #f3f4f6;padding-bottom:6px;">${badges}</div>${html}`;
       }
-      if (html) layer.bindPopup(`<div class="text-xs leading-relaxed">${html}</div>`, { maxWidth: 360 });
+      if (html) layer.bindPopup(`<div class="text-xs leading-relaxed font-sans">${html}</div>`, { maxWidth: 360 });
 
       layer.on('click', (e) => {
         if (measuringRef.current) return;
@@ -1771,6 +1920,7 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
           currentTypes: luData.types,
           currentAreas: luData.areas,
           totalArea: getParcelArea(feature.properties),
+          properties: feature.properties,
           position: { x: cp.x, y: cp.y },
         });
       });
@@ -1779,327 +1929,607 @@ const TaxMapView = forwardRef(({ onLayerCountChange, surveyMode }, ref) => {
 
   const showTable = tableLayerId !== null;
 
+  // Compute Land Use Stats for Dashboard in Sidebar
+  const stats = useMemo(() => {
+    const counts = {};
+    const areaWah = {};
+    LAND_USE_TYPES.forEach((t) => { counts[t.key] = 0; areaWah[t.key] = 0; });
+    let assigned = 0;
+
+    Object.entries(landUseAssignments).forEach(([code, val]) => {
+      const { types, areas } = normalizeLUFull(val);
+      if (types.length === 0) return;
+      assigned++;
+
+      const hasExplicitArea = Object.values(areas).some((a) => parseAreaToWah(a) > 0);
+      const parcelTotalArea = parcelAreaMap?.[code] || null;
+
+      types.forEach((v, i) => {
+        if (counts[v] === undefined) return;
+        counts[v]++;
+
+        if (hasExplicitArea) {
+          areaWah[v] += parseAreaToWah(areas[v]);
+        } else if (i === 0 && parcelTotalArea) {
+          areaWah[v] += parseAreaToWah(parcelTotalArea);
+        }
+      });
+    });
+
+    const unassigned = allParcelCodes.filter((c) => !landUseAssignments[c] || normalizeLUFull(landUseAssignments[c]).types.length === 0);
+    return { counts, areaWah, assigned, total: allParcelCodes.length, unassigned };
+  }, [landUseAssignments, allParcelCodes, parcelAreaMap]);
+
+  // Drag and Drop support
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (file) triggerUploadAssistant(file);
+  };
+
+  const triggerFileSelect = () => {
+    fileInputRef.current?.click();
+  };
+
   return (
-    <div className="relative w-full h-full flex flex-col rounded-lg overflow-hidden shadow-lg border border-gray-200">
-      <div className={`relative w-full ${showTable ? 'h-1/2' : 'h-full'} transition-all duration-300`}>
-        <MapContainer key={mapKey} center={defaultCenter} zoom={defaultZoom} className="w-full rounded-t-lg" style={{ zIndex: 1, height: '100%' }} scrollWheelZoom zoomControl>
-          <MapController onMapReady={handleMapReady} />
-          {initialBounds && <FitBoundsToGeoJSON geojsonData={initialBounds} />}
-          {fitTarget && <FitBoundsToGeoJSON geojsonData={fitTarget} />}
-          <LayersControl position="bottomleft">
-            <BaseLayer checked name="🗺️ แผนที่ถนน"><TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" /></BaseLayer>
-            <BaseLayer name="🛰️ ภาพถ่ายทางอากาศ"><TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution="Tiles &copy; Esri" /></BaseLayer>
-          </LayersControl>
-
-          {geojsonLayers.filter((l) => l.visible && (l.id !== editingLayerId || editFeatureIdx !== null)).map((ly) => {
-            const isEditLayer = ly.id === editingLayerId && editFeatureIdx !== null;
-            return (
-              <SafeGeoJSON key={`geojson-${ly.id}-${mapKey}-${surveyMode ? `survey-${landUseVersion}` : 'normal'}`}
-                data={ly.data}
-                style={isEditLayer ? () => ({ color: '#9ca3af', weight: 1, fillColor: '#e5e7eb', fillOpacity: 0.1 })
-                  : surveyMode ? getLandUseStyle : geoJsonStyle(ly.color)}
-                onEachFeature={isEditLayer ? () => {} : surveyMode ? onEachFeatureSurvey : onEachFeature}
-                pointToLayer={(f, ll) => L.circleMarker(ll, { radius: 6, fillColor: ly.color, color: '#fff', weight: 2, fillOpacity: 0.8 })} />
-            );
-          })}
-
-          {editingLayerId && editFeatureIdx === null && (() => {
-            const editLy = geojsonLayers.find((l) => l.id === editingLayerId);
-            if (!editLy) return null;
-            return (
-              <SafeGeoJSON key={`edit-select-${editingLayerId}-${mapKey}`}
-                data={editLy.data} style={editSelectStyle}
-                onEachFeature={onEachFeatureEditSelect}
-                pointToLayer={(f, ll) => L.circleMarker(ll, { radius: 8, fillColor: '#f59e0b', color: '#fff', weight: 2, fillOpacity: 0.8 })} />
-            );
-          })()}
-
-          {editingLayerId && editFeatureIdx !== null && !isDrawing && (() => {
-            const editLy = geojsonLayers.find((l) => l.id === editingLayerId);
-            const feat = editLy?.data?.features?.[editFeatureIdx];
-            if (!feat) return null;
-            return <SingleFeatureEditor feature={feat} featureIndex={editFeatureIdx} onCollect={editCollectRef} />;
-          })()}
-
-          {editingLayerId && isDrawing && !drawnFeature && (
-            <DrawNewFeature onCreated={handleDrawCreated} />
-          )}
-
-          {isMeasuring && <MeasureAreaTool key={`measure-${measureKey}`} onUpdate={setMeasureResult} />}
-
-          {selectedFeature && (
-            <SafeGeoJSON key={`highlight-${highlightKey}`} data={selectedFeature} style={() => highlightStyle} onEachFeature={() => {}}
-              pointToLayer={(f, ll) => L.circleMarker(ll, { radius: 10, fillColor: '#fbbf24', color: '#ef4444', weight: 3, fillOpacity: 0.8 })} />
-          )}
-        </MapContainer>
-
-        {(loadingFiles || saving || editSaving) && (
-          <div className="absolute inset-0 bg-white/60 z-20 flex items-center justify-center rounded-lg">
-            <div className="flex flex-col items-center gap-2">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-              <span className="text-sm text-gray-600">{editSaving ? 'กำลังบันทึกรูปแปลง...' : saving ? 'กำลังบันทึก...' : 'กำลังโหลด...'}</span>
+    <div className="relative w-full h-full flex bg-gray-50 overflow-hidden font-sans select-none">
+      
+      {/* 1. Left Sidebar */}
+      <div className={`flex flex-col bg-white border-r border-gray-200 transition-all duration-300 relative z-30 ${sidebarOpen ? 'w-80 md:w-[350px]' : 'w-0 overflow-hidden border-r-0'}`}>
+        
+        {/* Sidebar Header */}
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+          <div className="flex items-center gap-2">
+            <div className="bg-blue-100 p-1.5 rounded-lg text-blue-600">
+              <Layers size={18} />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-gray-800">เครื่องมือแผนที่ภาษี</h2>
+              <p className="text-[10px] text-gray-400 font-medium">Smart Saard Workspace</p>
             </div>
           </div>
-        )}
-
-        {editingLayerId && editFeatureIdx === null && !isDrawing && !drawnFeature && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-amber-50 border-2 border-amber-400 rounded-xl shadow-lg px-5 py-3 flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-amber-600 text-lg">✏️</span>
-              <div>
-                <p className="text-sm font-semibold text-amber-800">เลือกแปลงที่ต้องการแก้ไข</p>
-                <p className="text-[10px] text-amber-600">คลิกที่แปลงบนแผนที่ หรือวาดแปลงใหม่</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 ml-2">
-              <button onClick={startDrawing}
-                className="px-4 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors shadow">
-                ➕ วาดแปลงใหม่
-              </button>
-              <button onClick={exitEditMode}
-                className="px-4 py-1.5 bg-gray-500 text-white text-sm font-medium rounded-lg hover:bg-gray-600 transition-colors shadow">
-                ✕ ออก
-              </button>
-            </div>
-          </div>
-        )}
-
-        {editingLayerId && isDrawing && !drawnFeature && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-green-50 border-2 border-green-400 rounded-xl shadow-lg px-5 py-3 flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-green-600 text-lg">📐</span>
-              <div>
-                <p className="text-sm font-semibold text-green-800">วาดรูปแปลงใหม่</p>
-                <p className="text-[10px] text-green-600">คลิกเพื่อวางจุดมุม — ดับเบิลคลิกเพื่อจบ</p>
-              </div>
-            </div>
-            <button onClick={() => { setIsDrawing(false); setMapKey((prev) => prev + 1); }}
-              className="px-4 py-1.5 bg-gray-500 text-white text-sm font-medium rounded-lg hover:bg-gray-600 transition-colors shadow ml-2">
-              ✕ ยกเลิก
-            </button>
-          </div>
-        )}
-
-        {editingLayerId && editFeatureIdx !== null && (() => {
-          const editLy = geojsonLayers.find((l) => l.id === editingLayerId);
-          const feat = editLy?.data?.features?.[editFeatureIdx];
-          const code = feat ? getParcelCode(feat.properties) : null;
-          return (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-amber-50 border-2 border-amber-400 rounded-xl shadow-lg px-5 py-3 flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <span className="text-amber-600 text-lg">✏️</span>
-                <div>
-                  <p className="text-sm font-semibold text-amber-800">กำลังแก้ไข{code ? `: ${code}` : ` แปลง #${editFeatureIdx + 1}`}</p>
-                  <p className="text-[10px] text-amber-600">ลากจุดมุมเพื่อแก้ไข — คลิกเส้นเพื่อเพิ่มจุด</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 ml-2">
-                <button onClick={saveEditFeature} disabled={editSaving}
-                  className="px-4 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 shadow">
-                  {editSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึก'}
-                </button>
-                <button onClick={cancelEditFeature} disabled={editSaving}
-                  className="px-4 py-1.5 bg-white text-amber-700 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-50 shadow border border-amber-300">
-                  ↩ เลือกแปลงอื่น
-                </button>
-                <button onClick={exitEditMode} disabled={editSaving}
-                  className="px-4 py-1.5 bg-gray-500 text-white text-sm font-medium rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50 shadow">
-                  ✕ ออก
-                </button>
-              </div>
-            </div>
-          );
-        })()}
-
-        <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
-          {!editingLayerId && <button onClick={handleResetView} className="px-3 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg shadow-lg hover:bg-gray-50 transition-colors border border-gray-200">🗺️ จัดกึ่งกลาง</button>}
-          {!editingLayerId && geojsonLayers.length > 0 && <button onClick={() => setShowPanel(!showPanel)} className="px-3 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg shadow-lg hover:bg-gray-50 transition-colors border border-gray-200">📋 เลเยอร์ ({geojsonLayers.length})</button>}
-          {!editingLayerId && surveyMode && <button onClick={() => setShowLegend(!showLegend)} className="px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-lg shadow-lg hover:bg-green-700 transition-colors">📊 สรุปสำรวจ</button>}
-          {!editingLayerId && (
-            <button
-              onClick={() => {
-                if (isMeasuring) { setIsMeasuring(false); setMeasureResult(null); }
-                else { setIsMeasuring(true); setMeasureKey((k) => k + 1); setMeasureResult(null); }
-              }}
-              className={`px-3 py-2 text-sm font-medium rounded-lg shadow-lg transition-colors border ${isMeasuring ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
-            >
-              📐 วัดเนื้อที่
-            </button>
-          )}
+          <button onClick={() => setSidebarOpen(false)} className="btn btn-circle btn-ghost btn-xs text-gray-400 hover:text-gray-600">
+            <ChevronLeft size={16} />
+          </button>
         </div>
 
-        {isMeasuring && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-rose-50 border-2 border-rose-400 rounded-xl shadow-lg px-5 py-3 flex flex-wrap items-center gap-3 max-w-xl">
-            <span className="text-rose-600 text-lg">📐</span>
-            <div className="min-w-0">
-              {measureResult?.closed ? (
+        {/* Tab Navigation */}
+        <div className="flex border-b border-gray-100 bg-gray-50/20 text-xs">
+          <button onClick={() => setActiveTab('layers')}
+            className={`flex-1 py-3 text-center font-bold border-b-2 flex items-center justify-center gap-1.5 transition-colors ${activeTab === 'layers' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
+            <Layers size={14} />
+            <span>เลเยอร์ ({geojsonLayers.length})</span>
+          </button>
+          <button onClick={() => { setActiveTab('survey'); setSurveyMode(true); }}
+            className={`flex-1 py-3 text-center font-bold border-b-2 flex items-center justify-center gap-1.5 transition-colors ${activeTab === 'survey' ? 'border-green-600 text-green-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
+            <MapPin size={14} />
+            <span>สำรวจที่ดิน</span>
+          </button>
+          <button onClick={() => setActiveTab('tools')}
+            className={`flex-1 py-3 text-center font-bold border-b-2 flex items-center justify-center gap-1.5 transition-colors ${activeTab === 'tools' ? 'border-amber-600 text-amber-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
+            <Wrench size={14} />
+            <span>เครื่องมือ</span>
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          
+          {/* TAB 1: LAYERS */}
+          {activeTab === 'layers' && (
+            <div className="space-y-4 animate-fade-in">
+              {/* Drag and Drop Zone */}
+              <div
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                onClick={triggerFileSelect}
+                className="border-2 border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50/20 rounded-2xl p-5 text-center cursor-pointer transition-all duration-200 group flex flex-col items-center justify-center gap-2"
+              >
+                <div className="bg-blue-50 p-2.5 rounded-full text-blue-500 group-hover:scale-110 transition-transform">
+                  <UploadCloud size={24} />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-700">อัปโหลดไฟล์ GeoJSON</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อค้นหา</p>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".geojson,.json"
+                  onChange={(e) => triggerUploadAssistant(e.target.files?.[0])}
+                  className="hidden"
+                />
+              </div>
+
+              {/* Layer list */}
+              <div className="space-y-2">
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">รายชื่อเลเยอร์</span>
+                {geojsonLayers.length === 0 ? (
+                  <p className="text-xs text-gray-400 text-center py-6">ยังไม่มีเลเยอร์แผนที่นำเข้า</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {geojsonLayers.map((ly, index) => (
+                      <div key={ly.id} className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all ${tableLayerId === ly.id ? 'bg-blue-50/40 border-blue-200' : 'bg-white border-gray-100 hover:border-gray-200'}`}>
+                        {/* Layer order arrows */}
+                        <div className="flex flex-col flex-shrink-0 text-gray-400">
+                          <button onClick={() => moveLayer(ly.id, 'up')} disabled={index === 0} className={`text-[10px] p-0.5 disabled:opacity-30 ${index === 0 ? '' : 'hover:text-blue-500'}`}>▲</button>
+                          <button onClick={() => moveLayer(ly.id, 'down')} disabled={index === geojsonLayers.length - 1} className={`text-[10px] p-0.5 disabled:opacity-30 ${index === geojsonLayers.length - 1 ? '' : 'hover:text-blue-500'}`}>▼</button>
+                        </div>
+                        {/* Color bubble */}
+                        <div className="relative flex-shrink-0">
+                          <button
+                            onClick={() => setColorPickerLayerId((prev) => (prev === ly.id ? null : ly.id))}
+                            className="w-4 h-4 rounded-full border-2 border-white shadow hover:scale-105 transition-all"
+                            style={{ backgroundColor: ly.color }}
+                            title="เปลี่ยนสีเลเยอร์"
+                          />
+                          {colorPickerLayerId === ly.id && (
+                            <div className="absolute left-0 top-6 z-[1000] bg-white rounded-xl shadow-2xl border border-gray-100 p-2 flex flex-wrap gap-1.5 w-36">
+                              {LAYER_COLORS.map((c) => (
+                                <button
+                                  key={c}
+                                  onClick={() => updateLayerColor(ly.id, c)}
+                                  className={`w-5 h-5 rounded-full border-2 transition-all hover:scale-110 ${ly.color === c ? 'border-gray-800 scale-105' : 'border-white'}`}
+                                  style={{ backgroundColor: c }}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {/* Title details */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-gray-800 truncate" title={ly.name}>{ly.name}</p>
+                          <p className="text-[10px] text-gray-400 font-semibold">{ly.featureCount} แปลง • {ly.savedOnServer ? 'เซิร์ฟเวอร์' : 'ชั่วคราว'}</p>
+                        </div>
+                        {/* Actions */}
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => { setTableLayerId((prev) => (prev === ly.id ? null : ly.id)); setSelectedFeature(null); setHighlightKey((k) => k + 1); }}
+                            className={`btn btn-ghost btn-xs btn-circle ${tableLayerId === ly.id ? 'text-blue-600' : 'text-gray-400 hover:text-blue-600'}`} title="เปิดตารางแอตทริบิวต์">
+                            <Table size={13} />
+                          </button>
+                          <button onClick={() => startEdit(ly.id)} disabled={!!editingLayerId}
+                            className={`btn btn-ghost btn-xs btn-circle ${editingLayerId === ly.id ? 'text-amber-600' : 'text-gray-400 hover:text-amber-600'}`} title="แก้ไขพิกัดรูปแปลง">
+                            ✏️
+                          </button>
+                          <button onClick={() => toggleLayerVisibility(ly.id)} className="btn btn-ghost btn-xs btn-circle text-gray-400 hover:text-blue-500" title={ly.visible ? 'ซ่อนเลเยอร์' : 'แสดงเลเยอร์'}>
+                            {ly.visible ? <Eye size={13} /> : <EyeOff size={13} />}
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); setLayerToDelete({ id: ly.id, name: ly.name }); }} disabled={!!editingLayerId}
+                            className="btn btn-ghost btn-xs btn-circle text-gray-400 hover:text-red-500" title="ลบเลเยอร์">
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: SURVEY MODE */}
+          {activeTab === 'survey' && (
+            <div className="space-y-4 animate-fade-in">
+              {/* Toggle switch */}
+              <div className="bg-green-50/50 border border-green-100 rounded-2xl p-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🌍</span>
+                  <div>
+                    <span className="text-xs font-bold text-green-800 block">สำรวจการใช้ประโยชน์ที่ดิน</span>
+                    <span className="text-[10px] text-green-600 font-semibold">{surveyMode ? 'กำลังทำงาน...' : 'ปิดการแสดงผล'}</span>
+                  </div>
+                </div>
+                <input type="checkbox" checked={surveyMode} onChange={(e) => setSurveyMode(e.target.checked)} className="toggle toggle-success toggle-sm" />
+              </div>
+
+              {surveyMode && (
                 <>
-                  <p className="text-sm font-bold text-rose-800">{measureResult.areaStr} ไร่-งาน-วา</p>
-                  <p className="text-[10px] text-rose-600">{Number(measureResult.sqm).toLocaleString('th-TH', { maximumFractionDigits: 2 })} ตร.ม. ({measureResult.pointCount} จุด)</p>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm font-semibold text-rose-800">
-                    {(measureResult?.pointCount || 0) >= 3
-                      ? `≈ ${measureResult.areaStr} ไร่-งาน-วา`
-                      : `คลิกเพื่อวางจุดมุม (${measureResult?.pointCount || 0} จุด)`}
-                  </p>
-                  <p className="text-[10px] text-rose-600">
-                    {(measureResult?.pointCount || 0) >= 3
-                      ? 'ดับเบิลคลิก หรือ คลิกจุดแรก เพื่อปิดรูป'
-                      : 'ต้องมีอย่างน้อย 3 จุด — ดับเบิลคลิกเพื่อปิดรูป'}
-                  </p>
+                  {/* Progress dashboard card */}
+                  <div className="bg-white border border-gray-100 shadow-sm rounded-2xl p-4 space-y-3">
+                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">ความคืบหน้าการสำรวจ</span>
+                    <div className="flex justify-between items-end">
+                      <div>
+                        <span className="text-2xl font-black text-gray-800 font-mono">{stats.assigned}</span>
+                        <span className="text-xs text-gray-400 font-semibold"> / {stats.total} แปลง</span>
+                      </div>
+                      <span className="text-sm font-black text-green-600 font-mono">{Math.round((stats.assigned / (stats.total || 1)) * 100)}%</span>
+                    </div>
+                    {/* Completion bar */}
+                    <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-500 rounded-full transition-all duration-500" style={{ width: `${(stats.assigned / (stats.total || 1)) * 100}%` }} />
+                    </div>
+                    {stats.unassigned.length > 0 && (
+                      <p className="text-[10px] font-bold text-amber-600 flex items-center gap-0.5">
+                        <AlertTriangle size={10} />
+                        <span>เหลือแปลงที่ดินที่ยังไม่ได้สำรวจอีก {stats.unassigned.length} แปลง</span>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Distribution break downs */}
+                  <div className="space-y-1.5">
+                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">สรุปประเภทการใช้งาน</span>
+                    <div className="space-y-1">
+                      {LAND_USE_TYPES.map((type) => (
+                        <div key={type.key} className="flex items-center gap-2 text-xs p-1.5 rounded-lg hover:bg-gray-50 transition-colors">
+                          <div className="w-4 h-3 rounded shadow-sm flex-shrink-0" style={{ backgroundColor: type.fillColor, border: `1.5px solid ${type.color}` }} />
+                          <span className="flex-1 truncate text-gray-700 font-medium">{type.icon} {type.label}</span>
+                          <span className="font-bold text-gray-800 font-mono w-12 text-right">{stats.counts[type.key]} แปลง</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Batch Tools Panel */}
+                  <div className="border border-gray-100 rounded-2xl p-4 space-y-3 bg-gray-50/50">
+                    <span className="text-xs font-bold text-gray-700 block">⚡ เครื่องมือกำหนดค่าแปลงจำนวนมาก</span>
+                    
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase">ประเภทเป้าหมาย:</label>
+                      <select value={bulkType} onChange={(e) => setBulkType(e.target.value)}
+                        className="select select-bordered select-sm w-full text-xs font-semibold focus:outline-none bg-white">
+                        {LAND_USE_TYPES.map((t) => (
+                          <option key={t.key} value={t.key}>{t.icon} {t.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <button onClick={() => bulkAssignLandUse(stats.unassigned, bulkType)} disabled={saving || stats.unassigned.length === 0}
+                      className="btn btn-success btn-sm w-full text-white font-bold shadow-sm disabled:opacity-40">
+                      🌿 กำหนดให้แปลงที่เหลือทั้งหมด ({stats.unassigned.length})
+                    </button>
+                  </div>
                 </>
               )}
             </div>
-            {measureResult?.closed && (
-              <>
-                <input
-                  type="text"
-                  placeholder="หมายเหตุ (ถ้ามี)"
-                  value={measureNote}
-                  onChange={(e) => setMeasureNote(e.target.value)}
-                  className="px-3 py-1.5 text-sm border border-rose-300 rounded-lg w-40 focus:ring-2 focus:ring-rose-400 focus:border-rose-400"
-                />
-                <button
-                  onClick={saveMeasurement}
-                  disabled={measureSaving}
-                  className="px-4 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors shadow disabled:opacity-50"
-                >
-                  {measureSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึกการวัด'}
-                </button>
-              </>
-            )}
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button onClick={() => { setMeasureKey((k) => k + 1); setMeasureResult(null); setMeasureNote(''); }}
-                className="px-3 py-1.5 bg-white text-rose-700 text-sm font-medium rounded-lg hover:bg-rose-100 transition-colors shadow border border-rose-300">
-                🔄 ล้าง
-              </button>
-              <button onClick={() => { setIsMeasuring(false); setMeasureResult(null); setMeasureNote(''); }}
-                className="px-3 py-1.5 bg-gray-500 text-white text-sm font-medium rounded-lg hover:bg-gray-600 transition-colors shadow">
-                ✕ ปิด
-              </button>
+          )}
+
+          {/* TAB 3: TOOLS */}
+          {activeTab === 'tools' && (
+            <div className="space-y-4 animate-fade-in">
+              {/* Measurement tool toggle */}
+              <div className="bg-white border border-gray-100 shadow-sm rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-rose-500"><Wrench size={18} /></span>
+                    <div>
+                      <span className="text-xs font-bold text-gray-800 block">เครื่องมือวัดระยะและพื้นที่</span>
+                      <span className="text-[10px] text-gray-400 font-medium">คำนวณพื้นที่แบบ Ellipsoid WGS84</span>
+                    </div>
+                  </div>
+                  <input type="checkbox" checked={isMeasuring} onChange={(e) => {
+                    if (e.target.checked) { setIsMeasuring(true); setMeasureKey((k) => k + 1); setMeasureResult(null); }
+                    else { setIsMeasuring(false); setMeasureResult(null); }
+                  }} className="toggle toggle-error toggle-sm" />
+                </div>
+
+                {isMeasuring && (
+                  <div className="bg-rose-50/50 border border-rose-100 rounded-xl p-3 text-[11px] text-rose-800 space-y-1">
+                    <p className="font-bold flex items-center gap-0.5">💡 วิธีการใช้งาน:</p>
+                    <p>1. คลิกบนจุดต่าง ๆ ในแผนที่เพื่อเริ่มลากรูปเหลี่ยม</p>
+                    <p>2. ดับเบิลคลิก หรือคลิกจุดแรก เพื่อบรรจบรูปเพื่อวัดขนาด</p>
+                    <p>3. คุณสามารถกดล้างจุดเพื่อเริ่มการวัดใหม่ได้</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Editing geometries mode explanation */}
+              <div className="bg-white border border-gray-100 shadow-sm rounded-2xl p-4 space-y-3">
+                <span className="text-xs font-bold text-gray-800 block">✏️ แก้ไขพิกัดแปลงแปลงที่ดิน</span>
+                <p className="text-[10px] text-gray-400 leading-normal">
+                  กดปุ่มแก้ไข (✏️) ที่รายการเลเยอร์ในแท็บ &quot;เลเยอร์&quot; เพื่อเข้าสู่โหมดปรับแต่งพิกัดรูปแปลงที่ดิน ซึ่งรองรับการวาดเส้น ลากจุดมุม ดึงเส้น และสร้างแปลงพิกัดใหม่ขึ้นเซิร์ฟเวอร์
+                </p>
+              </div>
             </div>
+          )}
+
+        </div>
+
+        {/* Back Button */}
+        <div className="p-4 border-t border-gray-100 bg-gray-50/50">
+          <Link href="/admin" className="btn btn-outline btn-sm w-full font-bold">
+            กลับหน้าแดชบอร์ดหลัก
+          </Link>
+        </div>
+      </div>
+
+      {/* Sidebar toggle button (floating edge) */}
+      <button
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="absolute bottom-20 left-4 md:left-[350px] z-[800] btn btn-circle btn-sm bg-white hover:bg-gray-100 shadow-xl border border-gray-200 transition-all duration-300 transform -translate-x-1/2"
+        style={{ left: sidebarOpen ? undefined : '16px' }}
+      >
+        {sidebarOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+      </button>
+
+      {/* 2. Main Workspace Block */}
+      <div className="flex-1 h-full flex flex-col relative min-w-0">
+        
+        {/* Map Container Viewport */}
+        <div className={`relative w-full ${showTable ? 'h-1/2' : 'h-full'} transition-all duration-300`}>
+          
+          <MapContainer key={mapKey} center={defaultCenter} zoom={defaultZoom} className="w-full h-full z-1" scrollWheelZoom zoomControl>
+            <MapController onMapReady={handleMapReady} />
+            {initialBounds && <FitBoundsToGeoJSON geojsonData={initialBounds} />}
+            {fitTarget && <FitBoundsToGeoJSON geojsonData={fitTarget} />}
+            
+            <LayersControl position="bottomleft">
+              <BaseLayer checked name="🗺️ แผนที่ถนน"><TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" /></BaseLayer>
+              <BaseLayer name="🛰️ ภาพถ่ายทางอากาศ"><TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution="Tiles &copy; Esri" /></BaseLayer>
+            </LayersControl>
+
+            {geojsonLayers.filter((l) => l.visible && (l.id !== editingLayerId || editFeatureIdx !== null)).map((ly) => {
+              const isEditLayer = ly.id === editingLayerId && editFeatureIdx !== null;
+              return (
+                <SafeGeoJSON key={`geojson-${ly.id}-${mapKey}-${surveyMode ? `survey-${landUseVersion}` : 'normal'}`}
+                  data={ly.data}
+                  style={isEditLayer ? () => ({ color: '#9ca3af', weight: 1, fillColor: '#e5e7eb', fillOpacity: 0.1 })
+                    : surveyMode ? getLandUseStyle : geoJsonStyle(ly.color)}
+                  onEachFeature={isEditLayer ? () => {} : surveyMode ? onEachFeatureSurvey : onEachFeature}
+                  pointToLayer={(f, ll) => L.circleMarker(ll, { radius: 6, fillColor: ly.color, color: '#fff', weight: 2, fillOpacity: 0.8 })} />
+              );
+            })}
+
+            {editingLayerId && editFeatureIdx === null && (() => {
+              const editLy = geojsonLayers.find((l) => l.id === editingLayerId);
+              if (!editLy) return null;
+              return (
+                <SafeGeoJSON key={`edit-select-${editingLayerId}-${mapKey}`}
+                  data={editLy.data} style={editSelectStyle}
+                  onEachFeature={onEachFeatureEditSelect}
+                  pointToLayer={(f, ll) => L.circleMarker(ll, { radius: 8, fillColor: '#f59e0b', color: '#fff', weight: 2, fillOpacity: 0.8 })} />
+              );
+            })()}
+
+            {editingLayerId && editFeatureIdx !== null && !isDrawing && (() => {
+              const editLy = geojsonLayers.find((l) => l.id === editingLayerId);
+              const feat = editLy?.data?.features?.[editFeatureIdx];
+              if (!feat) return null;
+              return <SingleFeatureEditor feature={feat} featureIndex={editFeatureIdx} onCollect={editCollectRef} />;
+            })()}
+
+            {editingLayerId && isDrawing && !drawnFeature && (
+              <DrawNewFeature onCreated={handleDrawCreated} />
+            )}
+
+            {isMeasuring && <MeasureAreaTool key={`measure-${measureKey}`} onUpdate={setMeasureResult} />}
+
+            {selectedFeature && (
+              <SafeGeoJSON key={`highlight-${highlightKey}`} data={selectedFeature} style={() => highlightStyle} onEachFeature={() => {}}
+                pointToLayer={(f, ll) => L.circleMarker(ll, { radius: 10, fillColor: '#fbbf24', color: '#ef4444', weight: 3, fillOpacity: 0.8 })} />
+            )}
+          </MapContainer>
+
+          {/* Loading Overlays */}
+          {(loadingFiles || saving || editSaving) && (
+            <div className="absolute inset-0 bg-white/60 z-[1000] flex items-center justify-center">
+              <div className="flex flex-col items-center gap-3 bg-white p-6 rounded-2xl shadow-2xl border border-gray-100">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+                <span className="text-xs text-gray-500 font-bold tracking-tight">{editSaving ? 'กำลังบันทึกรูปแปลง...' : saving ? 'กำลังประมวลผลข้อมูล...' : 'กำลังดึงฐานข้อมูล...'}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Map floating panels - Center View & Measure Tool indicator */}
+          <div className="absolute top-4 right-4 z-[800] flex flex-col gap-2">
+            <button onClick={handleResetView} className="btn btn-sm bg-white hover:bg-gray-100 text-gray-700 font-bold shadow-lg border border-gray-200/50">
+              🗺️ จัดกึ่งกลาง
+            </button>
           </div>
-        )}
 
-        {uploadSuccess && <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm">✅ {uploadSuccess}</div>}
-        {uploadError && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm flex items-center gap-2">
-            <span>⚠️ {uploadError}</span>
-            <button onClick={() => setUploadError(null)} className="ml-2 font-bold hover:text-red-200">✕</button>
-          </div>
-        )}
-
-        {surveyMode && popupInfo && (
-          <LandUsePopup
-            parcelCode={popupInfo.parcelCode}
-            currentTypes={popupInfo.currentTypes}
-            currentAreas={popupInfo.currentAreas}
-            totalArea={popupInfo.totalArea}
-            position={popupInfo.position}
-            onAssign={(luData) => assignLandUse(popupInfo.parcelCode, luData)}
-            onClose={() => setPopupInfo(null)}
-          />
-        )}
-
-        {surveyMode && showLegend && (
-          <LandUseLegend
-            assignments={landUseAssignments}
-            allParcelCodes={allParcelCodes}
-            parcelAreaMap={parcelAreaMap}
-            onClose={() => setShowLegend(false)}
-            onBulkAssign={bulkAssignLandUse}
-          />
-        )}
-
-        {drawnFeature && (
-          <NewFeaturePropsForm
-            onSave={saveNewFeature}
-            onCancel={cancelNewFeature}
-          />
-        )}
-
-        {layerToDelete && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50" onClick={() => setLayerToDelete(null)}>
-            <div className="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">ยืนยันการลบเลเยอร์</h3>
-              <p className="text-sm text-gray-600 mb-4">
-                ต้องการลบเลเยอร์ <strong>{layerToDelete.name}</strong> ใช่หรือไม่?
-              </p>
-              <p className="text-xs text-amber-600 mb-6">การลบจะลบไฟล์จากเซิร์ฟเวอร์อย่างถาวร</p>
-              <div className="flex gap-3 justify-end">
-                <button onClick={() => setLayerToDelete(null)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm font-medium">
-                  ยกเลิก
+          {/* Geoman toolbar mode active header overlays */}
+          {editingLayerId && editFeatureIdx === null && !isDrawing && !drawnFeature && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[800] bg-amber-50 border border-amber-300 rounded-2xl shadow-xl px-5 py-3.5 flex items-center gap-4 animate-fade-in">
+              <div className="flex items-center gap-2">
+                <span className="text-amber-500 text-xl">✏️</span>
+                <div>
+                  <p className="text-xs font-bold text-amber-800">โหมดปรับแต่งพิกัดรูปแปลง</p>
+                  <p className="text-[10px] text-amber-600">คลิกที่แปลงบนแผนที่ หรือสร้างวาดแปลงพิกัดรูปขึ้นใหม่</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={startDrawing} className="btn btn-success btn-xs text-white font-bold shadow-sm">
+                  วาดแปลงใหม่
                 </button>
-                <button onClick={confirmRemoveLayer} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">
-                  ลบ
+                <button onClick={exitEditMode} className="btn btn-ghost btn-xs text-xs text-gray-500">
+                  ออกโหมดแก้ไข
                 </button>
               </div>
             </div>
+          )}
+
+          {editingLayerId && isDrawing && !drawnFeature && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[800] bg-green-50 border border-green-300 rounded-2xl shadow-xl px-5 py-3.5 flex items-center gap-4 animate-fade-in">
+              <div className="flex items-center gap-2">
+                <span className="text-green-500 text-xl">📐</span>
+                <div>
+                  <p className="text-xs font-bold text-green-800">กำลังวาดพิกัดรูปแปลงใหม่</p>
+                  <p className="text-[10px] text-green-600">คลิกเพื่อวางมุมกล้อง — ดับเบิลคลิกเพื่อปิดรูปทรง</p>
+                </div>
+              </div>
+              <button onClick={() => { setIsDrawing(false); setMapKey((prev) => prev + 1); }} className="btn btn-outline btn-xs font-bold">
+                ยกเลิกวาด
+              </button>
+            </div>
+          )}
+
+          {editingLayerId && editFeatureIdx !== null && (() => {
+            const editLy = geojsonLayers.find((l) => l.id === editingLayerId);
+            const feat = editLy?.data?.features?.[editFeatureIdx];
+            const code = feat ? getParcelCode(feat.properties) : null;
+            return (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[800] bg-amber-50 border border-amber-300 rounded-2xl shadow-xl px-5 py-3.5 flex items-center gap-4 animate-fade-in">
+                <div className="flex items-center gap-2">
+                  <span className="text-amber-500 text-xl">✏️</span>
+                  <div>
+                    <p className="text-xs font-bold text-amber-800">แก้ไขพิกัด{code ? `: ${code}` : ` แปลง #${editFeatureIdx + 1}`}</p>
+                    <p className="text-[10px] text-amber-600">ลากจุดมุมเพื่อย้ายเส้น — ดับเบิลคลิกบนเส้นเพื่อเพิ่มพิกัดมุมใหม่</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={saveEditFeature} disabled={editSaving} className="btn btn-success btn-xs text-white font-bold shadow-sm">
+                    {editSaving ? 'กำลังบันทึก...' : 'บันทึกรูปทรง'}
+                  </button>
+                  <button onClick={cancelEditFeature} disabled={editSaving} className="btn btn-outline btn-xs font-bold">
+                    เลือกแปลงอื่น
+                  </button>
+                  <button onClick={exitEditMode} disabled={editSaving} className="btn btn-ghost btn-xs text-xs text-gray-500">
+                    ออก
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Measuring Mode Dialog */}
+          {isMeasuring && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[800] bg-rose-50 border border-rose-300 rounded-2xl shadow-xl px-5 py-3.5 flex flex-wrap items-center gap-3 animate-fade-in max-w-xl">
+              <span className="text-rose-500 text-xl">📐</span>
+              <div className="min-w-[120px]">
+                {measureResult?.closed ? (
+                  <>
+                    <p className="text-sm font-extrabold text-rose-800 font-mono leading-tight">{measureResult.areaStr} ไร่</p>
+                    <p className="text-[10px] text-rose-600 font-semibold">{Number(measureResult.sqm).toLocaleString('th-TH')} ตร.ม.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs font-bold text-rose-800">
+                      {(measureResult?.pointCount || 0) >= 3 ? 'พร้อมคำนวณเนื้อที่' : 'วัดระยะทาง / พื้นที่'}
+                    </p>
+                    <p className="text-[10px] text-rose-600 font-medium">
+                      {(measureResult?.pointCount || 0) >= 3 ? 'คลิกจุดแรกเพื่อคำนวณพื้นที่' : 'วางจุดบนแผนที่อย่างน้อย 3 จุด'}
+                    </p>
+                  </>
+                )}
+              </div>
+              {measureResult?.closed && (
+                <>
+                  <input
+                    type="text"
+                    placeholder="หมายเหตุ (ถ้ามี)"
+                    value={measureNote}
+                    onChange={(e) => setMeasureNote(e.target.value)}
+                    className="input input-bordered input-sm text-xs font-semibold w-36 focus:outline-none"
+                  />
+                  <button
+                    onClick={saveMeasurement}
+                    disabled={measureSaving}
+                    className="btn btn-success btn-sm text-white font-bold shadow-sm"
+                  >
+                    บันทึกการวัด
+                  </button>
+                </>
+              )}
+              <button onClick={() => { setMeasureKey((k) => k + 1); setMeasureResult(null); setMeasureNote(''); }} className="btn btn-outline btn-sm font-bold">
+                ล้างจุด
+              </button>
+              <button onClick={() => { setIsMeasuring(false); setMeasureResult(null); setMeasureNote(''); }} className="btn btn-ghost btn-sm text-gray-500 font-bold">
+                ปิด
+              </button>
+            </div>
+          )}
+
+          {/* Toast notifications */}
+          {uploadSuccess && <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] bg-green-600 text-white font-bold px-4 py-2.5 rounded-xl shadow-2xl text-xs animate-bounce">✅ {uploadSuccess}</div>}
+          {uploadError && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-red-600 text-white font-bold px-4 py-2.5 rounded-xl shadow-2xl text-xs flex items-center gap-2 animate-fade-in">
+              <span>⚠️ {uploadError}</span>
+              <button onClick={() => setUploadError(null)} className="btn btn-xs btn-circle btn-ghost text-white">✕</button>
+            </div>
+          )}
+
+          {/* Land Use Settings Popup drawer (Slide from Right) */}
+          <AnimatePresence>
+            {surveyMode && popupInfo && (
+              <ParcelInspectorPanel
+                parcelCode={popupInfo.parcelCode}
+                currentTypes={popupInfo.currentTypes}
+                currentAreas={popupInfo.currentAreas}
+                totalArea={popupInfo.totalArea}
+                properties={popupInfo.properties}
+                onAssign={(luData) => assignLandUse(popupInfo.parcelCode, luData)}
+                onClose={() => setPopupInfo(null)}
+              />
+            )}
+          </AnimatePresence>
+
+          {/* New Shape Props form */}
+          {drawnFeature && (
+            <NewFeaturePropsForm
+              onSave={saveNewFeature}
+              onCancel={cancelNewFeature}
+            />
+          )}
+
+          {/* Mini Legend Overlay on bottom-right of Map (Compact indicator) */}
+          {surveyMode && showLegend && (
+            <div className="absolute bottom-4 right-4 z-[800] bg-white/95 backdrop-blur-sm px-3.5 py-2.5 rounded-2xl shadow-xl border border-gray-200/50 text-[10px] space-y-1.5 w-40 animate-fade-in">
+              <span className="font-bold text-gray-700 block border-b border-gray-100 pb-1">🎨 ประเภทที่ดิน</span>
+              <div className="space-y-1 max-h-40 overflow-y-auto font-semibold">
+                {LAND_USE_TYPES.map((t) => (
+                  <div key={t.key} className="flex items-center gap-1.5">
+                    <div className="w-3 h-2.5 rounded-sm" style={{ backgroundColor: t.fillColor, border: `1px solid ${t.color}` }} />
+                    <span className="text-gray-600 truncate">{t.icon} {t.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 3. Bottom Table Drawer */}
+        {showTable && (
+          <div className="h-1/2 border-t border-gray-200 flex flex-col overflow-hidden bg-white z-20">
+            <AttributeTable
+              layer={tableLayer}
+              onClose={() => { setTableLayerId(null); setSelectedFeature(null); setHighlightKey((k) => k + 1); }}
+              onZoomToFeature={zoomToFeature}
+              surveyMode={surveyMode}
+              landUseAssignments={landUseAssignments}
+              onUpdateFeature={updateFeatureProperty}
+              onDeleteFeature={deleteFeature}
+              onBulkAssign={bulkAssignLandUse}
+            />
           </div>
         )}
 
-        {showPanel && geojsonLayers.length > 0 && (
-          <div className="absolute top-20 left-2 z-10 bg-white rounded-lg shadow-lg border border-gray-200 w-72 max-h-[50vh] flex flex-col">
-            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-              <h3 className="text-sm font-semibold text-gray-800">📋 เลเยอร์ GeoJSON</h3>
-              <button onClick={() => setShowPanel(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
-            </div>
-            <div className="overflow-y-auto flex-1 p-2 space-y-1">
-              {geojsonLayers.map((ly, index) => (
-                <div key={ly.id} className={`flex items-center gap-1.5 p-2 rounded-lg text-xs transition-colors ${tableLayerId === ly.id ? 'bg-blue-50 ring-1 ring-blue-300' : ly.visible ? 'bg-gray-50' : 'bg-gray-100 opacity-60'}`}>
-                  <div className="flex flex-col flex-shrink-0">
-                    <button onClick={() => moveLayer(ly.id, 'up')} disabled={index === 0} className={`text-[10px] leading-none px-0.5 ${index === 0 ? 'text-gray-300' : 'text-gray-500 hover:text-blue-600'}`} title="ย้ายขึ้น">▲</button>
-                    <button onClick={() => moveLayer(ly.id, 'down')} disabled={index === geojsonLayers.length - 1} className={`text-[10px] leading-none px-0.5 ${index === geojsonLayers.length - 1 ? 'text-gray-300' : 'text-gray-500 hover:text-blue-600'}`} title="ย้ายลง">▼</button>
-                  </div>
-                  <div className="relative flex-shrink-0">
-                    <button
-                      onClick={() => setColorPickerLayerId((prev) => (prev === ly.id ? null : ly.id))}
-                      className="w-4 h-4 rounded-sm border-2 border-white shadow-sm hover:ring-2 hover:ring-blue-400 transition-all"
-                      style={{ backgroundColor: ly.color }}
-                      title="เปลี่ยนสี"
-                    />
-                    {colorPickerLayerId === ly.id && (
-                      <div className="absolute left-0 top-6 z-50 bg-white rounded-lg shadow-xl border border-gray-200 p-2 flex flex-wrap gap-1.5 w-36">
-                        {LAYER_COLORS.map((c) => (
-                          <button
-                            key={c}
-                            onClick={() => updateLayerColor(ly.id, c)}
-                            className={`w-6 h-6 rounded border-2 ${ly.color === c ? 'border-gray-800 ring-2 ring-blue-400' : 'border-gray-200 hover:border-gray-400'}`}
-                            style={{ backgroundColor: c }}
-                            title={c}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-800 truncate" title={ly.name}>{ly.name}</p>
-                    <p className="text-gray-500">{ly.featureCount} features{ly.savedOnServer && <span className="ml-1 text-green-600">• บันทึกแล้ว</span>}</p>
-                  </div>
-                  <button onClick={() => { setTableLayerId((prev) => (prev === ly.id ? null : ly.id)); setSelectedFeature(null); setHighlightKey((k) => k + 1); }} className={`flex-shrink-0 ${tableLayerId === ly.id ? 'text-blue-600' : 'text-gray-400 hover:text-blue-600'}`} title="ตาราง">📊</button>
-                  <button onClick={() => startEdit(ly.id)} className={`flex-shrink-0 ${editingLayerId === ly.id ? 'text-amber-600' : 'text-gray-400 hover:text-amber-600'}`} title="แก้ไขรูปแปลง" disabled={!!editingLayerId}>✏️</button>
-                  <button onClick={() => toggleLayerVisibility(ly.id)} className="text-gray-400 hover:text-blue-600 flex-shrink-0" title={ly.visible ? 'ซ่อน' : 'แสดง'}>{ly.visible ? '👁️' : '🙈'}</button>
-                  <button onClick={(e) => { e.stopPropagation(); setLayerToDelete({ id: ly.id, name: ly.name }); }} className="text-gray-400 hover:text-red-600 flex-shrink-0" title="ลบ" disabled={!!editingLayerId}>🗑️</button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
-      {showTable && (
-        <div className="h-1/2 border-t-2 border-gray-300 flex flex-col overflow-hidden">
-          <AttributeTable layer={tableLayer}
-            onClose={() => { setTableLayerId(null); setSelectedFeature(null); setHighlightKey((k) => k + 1); }}
-            onZoomToFeature={zoomToFeature} surveyMode={surveyMode}
-            landUseAssignments={landUseAssignments}
-            onUpdateFeature={updateFeatureProperty}
-            onDeleteFeature={deleteFeature}
-            onBulkAssign={bulkAssignLandUse} />
+      {/* Popups & Modals */}
+      <AnimatePresence>
+        {uploadAssistantFile && (
+          <GeoJSONUploadAssistant
+            file={uploadAssistantFile}
+            loading={saving}
+            onSave={handleUploadAssistantSave}
+            onCancel={() => setUploadAssistantFile(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      {layerToDelete && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 backdrop-blur-xs px-4" onClick={() => setLayerToDelete(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full border border-gray-100" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-extrabold text-gray-800 mb-2">🗑️ ยืนยันการลบเลเยอร์</h3>
+            <p className="text-xs text-gray-500 leading-relaxed mb-4">
+              ต้องการลบเลเยอร์ <strong>{layerToDelete.name}</strong> ใช่หรือไม่? การกระทำนี้จะลบไฟล์ต้นฉบับออกจากเซิร์ฟเวอร์อย่างถาวรและไม่สามารถกู้คืนได้
+            </p>
+            <div className="flex gap-2.5 justify-end">
+              <button onClick={() => setLayerToDelete(null)} className="btn btn-sm btn-ghost text-xs font-bold">
+                ยกเลิก
+              </button>
+              <button onClick={confirmRemoveLayer} className="btn btn-sm btn-error text-white font-bold px-4">
+                ยืนยันการลบ
+              </button>
+            </div>
+          </div>
         </div>
       )}
+
     </div>
   );
 });
