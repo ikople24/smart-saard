@@ -115,6 +115,29 @@ const geodesicArea = (latLngs) => {
   }
 };
 
+/* คำนวณระยะทาง geodesic ตลอดเส้น (เมตร) */
+const geodesicDistance = (latLngs) => {
+  if (!latLngs || latLngs.length < 2) return 0;
+  let total = 0;
+  for (let i = 0; i < latLngs.length - 1; i++) {
+    const a = latLngs[i];
+    const b = latLngs[i + 1];
+    const R = 6371000;
+    const φ1 = (a.lat * Math.PI) / 180;
+    const φ2 = (b.lat * Math.PI) / 180;
+    const Δφ = ((b.lat - a.lat) * Math.PI) / 180;
+    const Δλ = ((b.lng - a.lng) * Math.PI) / 180;
+    const x = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+    total += R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  }
+  return total;
+};
+
+const formatDistance = (meters) => {
+  if (meters >= 1000) return `${(meters / 1000).toFixed(3)} กม.`;
+  return `${Math.round(meters)} ม.`;
+};
+
 const MapController = ({ onMapReady }) => {
   const map = useMap();
   useEffect(() => {
@@ -256,14 +279,17 @@ const DrawNewFeature = ({ onCreated }) => {
   return null;
 };
 
-/* ─── Measure Area Tool ─── */
-const MeasureAreaTool = ({ onUpdate }) => {
+/* ─── Measure Tool (Area + Line modes) ─── */
+const MeasureAreaTool = ({ onUpdate, mode = 'area' }) => {
   const map = useMap();
   const pointsRef = useRef([]);
-  const closedRef = useRef(false);
+  const closedRef = useRef(false);   // area mode only
+  const doneRef = useRef(false);     // line mode: finished
   const lgRef = useRef(null);
   const cbRef = useRef(onUpdate);
   cbRef.current = onUpdate;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   const redraw = useCallback(() => {
     const lg = lgRef.current;
@@ -271,12 +297,66 @@ const MeasureAreaTool = ({ onUpdate }) => {
     lg.clearLayers();
     const pts = pointsRef.current;
     const isClosed = closedRef.current;
+    const isDone = doneRef.current;
+    const currentMode = modeRef.current;
 
     if (pts.length === 0) {
-      cbRef.current?.({ pointCount: 0, closed: false, sqm: 0, areaStr: '0-0-0' });
+      cbRef.current?.({ mode: currentMode, pointCount: 0, closed: false, done: false, sqm: 0, areaStr: '0-0-0', distanceM: 0 });
       return;
     }
 
+    /* ── LINE MODE ── */
+    if (currentMode === 'line') {
+      // วาดเส้น
+      if (pts.length >= 2) {
+        L.polyline(pts, { color: '#2563eb', weight: 3, dashArray: isDone ? null : '6,4' }).addTo(lg);
+      }
+      // วาดจุด + label ระยะสะสม
+      pts.forEach((p, i) => {
+        L.circleMarker(p, {
+          radius: i === 0 ? 7 : 5,
+          color: '#2563eb',
+          fillColor: i === 0 ? '#bfdbfe' : '#fff',
+          fillOpacity: 1, weight: 2,
+        }).addTo(lg);
+        if (i > 0) {
+          const segDist = geodesicDistance(pts.slice(0, i + 1));
+          const midLat = (pts[i - 1].lat + p.lat) / 2;
+          const midLng = (pts[i - 1].lng + p.lng) / 2;
+          const segOnly = geodesicDistance([pts[i - 1], p]);
+          L.marker({ lat: midLat, lng: midLng }, {
+            icon: L.divIcon({
+              className: '',
+              html: `<div style="white-space:nowrap;min-width:max-content;transform:translate(-50%,-50%)" class="bg-blue-50 border border-blue-400 rounded-lg px-2 py-0.5 text-blue-700 text-[10px] font-semibold shadow">${formatDistance(segOnly)}</div>`,
+              iconSize: [0, 0], iconAnchor: [0, 0],
+            }),
+            interactive: false,
+          }).addTo(lg);
+        }
+      });
+      // label รวมท้ายเส้น
+      if (pts.length >= 2) {
+        const totalM = geodesicDistance(pts);
+        const last = pts[pts.length - 1];
+        L.marker(last, {
+          icon: L.divIcon({
+            className: '',
+            html: `<div style="white-space:nowrap;min-width:max-content;transform:translate(8px,-50%)" class="bg-white border-2 border-blue-500 rounded-xl px-3 py-1.5 shadow-xl text-blue-700 font-bold text-xs text-center leading-normal">
+                    <div>📏 ${formatDistance(totalM)}</div>
+                    <div class="text-[10px] text-gray-500 font-normal">${pts.length} จุด</div>
+                   </div>`,
+            iconSize: [0, 0], iconAnchor: [0, 0],
+          }),
+          interactive: false,
+        }).addTo(lg);
+        cbRef.current?.({ mode: 'line', pointCount: pts.length, closed: false, done: isDone, sqm: 0, areaStr: '0-0-0', distanceM: totalM });
+      } else {
+        cbRef.current?.({ mode: 'line', pointCount: pts.length, closed: false, done: false, sqm: 0, areaStr: '0-0-0', distanceM: 0 });
+      }
+      return;
+    }
+
+    /* ── AREA MODE ── */
     pts.forEach((p, i) => {
       L.circleMarker(p, {
         radius: i === 0 && pts.length > 1 ? 8 : 5,
@@ -302,11 +382,12 @@ const MeasureAreaTool = ({ onUpdate }) => {
       L.marker(center, {
         icon: L.divIcon({
           className: '',
-          html: `<div class="bg-white border-2 border-rose-500 rounded-xl px-3 py-1.5 shadow-xl text-rose-700 font-bold text-xs whitespace-nowrap -translate-x-1/2 -translate-y-1/2 text-center leading-normal">
+          html: `<div style="white-space:nowrap;min-width:max-content;transform:translate(-50%,-50%)" class="bg-white border-2 border-rose-500 rounded-xl px-3 py-1.5 shadow-xl text-rose-700 font-bold text-xs text-center leading-normal">
                   <div>${areaStr} ไร่-งาน-วา</div>
                   <div class="text-[10px] text-gray-500 font-normal">${Math.round(sqm).toLocaleString('th-TH')} ตร.ม.</div>
                  </div>`,
           iconSize: [0, 0],
+          iconAnchor: [0, 0],
         }),
         interactive: false,
       }).addTo(lg);
@@ -325,12 +406,12 @@ const MeasureAreaTool = ({ onUpdate }) => {
           },
         };
       }
-      cbRef.current?.({ pointCount: pts.length, closed: isClosed, sqm, areaStr, geoJson });
+      cbRef.current?.({ mode: 'area', pointCount: pts.length, closed: isClosed, done: isClosed, sqm, areaStr, distanceM: 0, geoJson });
     } else {
       if (pts.length === 2) {
         L.polyline(pts, { color: '#e11d48', weight: 2, dashArray: '5,5' }).addTo(lg);
       }
-      cbRef.current?.({ pointCount: pts.length, closed: false, sqm: 0, areaStr: '0-0-0' });
+      cbRef.current?.({ mode: 'area', pointCount: pts.length, closed: false, done: false, sqm: 0, areaStr: '0-0-0', distanceM: 0 });
     }
   }, []);
 
@@ -348,6 +429,18 @@ const MeasureAreaTool = ({ onUpdate }) => {
     const handleClick = (e) => {
       e.preventDefault();
       e.stopPropagation();
+      const currentMode = modeRef.current;
+
+      if (currentMode === 'line') {
+        if (doneRef.current) return;
+        const cp = map.mouseEventToContainerPoint(e);
+        const latlng = map.containerPointToLatLng(cp);
+        pointsRef.current = [...pointsRef.current, latlng];
+        redraw();
+        return;
+      }
+
+      // area mode
       if (closedRef.current) return;
       const pts = pointsRef.current;
       const cp = map.mouseEventToContainerPoint(e);
@@ -367,6 +460,16 @@ const MeasureAreaTool = ({ onUpdate }) => {
     const handleDblClick = (e) => {
       e.preventDefault();
       e.stopPropagation();
+      const currentMode = modeRef.current;
+      if (currentMode === 'line') {
+        if (pointsRef.current.length >= 2 && !doneRef.current) {
+          // ลบจุดสุดท้ายออก 1 จุด (เพราะ dblclick = click x2)
+          pointsRef.current = pointsRef.current.slice(0, -1);
+          doneRef.current = true;
+          redraw();
+        }
+        return;
+      }
       if (pointsRef.current.length >= 3 && !closedRef.current) {
         closedRef.current = true;
         redraw();
@@ -1315,6 +1418,7 @@ const TaxMapView = forwardRef(({}, ref) => {
   const [drawnFeature, setDrawnFeature] = useState(null);
 
   const [isMeasuring, setIsMeasuring] = useState(false);
+  const [measureMode, setMeasureMode] = useState('area'); // 'area' | 'line'
   const [measureResult, setMeasureResult] = useState(null);
   const [measureKey, setMeasureKey] = useState(0);
   const [measureNote, setMeasureNote] = useState('');
@@ -1856,8 +1960,8 @@ const TaxMapView = forwardRef(({}, ref) => {
     const code = getParcelCode(feature.properties);
     const arr = normalizeLU(code ? landUseAssignments[code] : null);
     const luType = arr[0] ? LAND_USE_MAP[arr[0]] : null;
-    if (luType) return { color: luType.color, weight: 2.5, fillColor: luType.fillColor, fillOpacity: 0.5 };
-    return { color: '#9ca3af', weight: 1.5, fillColor: '#f3f4f6', fillOpacity: 0.15 };
+    if (luType) return { color: luType.color, weight: 2.5, fillColor: luType.fillColor, fillOpacity: 0 };
+    return { color: '#9ca3af', weight: 1.5, fillColor: '#f3f4f6', fillOpacity: 0 };
   }, [landUseAssignments]);
 
   const geoJsonStyle = useCallback((color) => () => ({ color, weight: 2, fillColor: color, fillOpacity: 0.2 }), []);
@@ -2296,7 +2400,7 @@ const TaxMapView = forwardRef(({}, ref) => {
               <DrawNewFeature onCreated={handleDrawCreated} />
             )}
 
-            {isMeasuring && <MeasureAreaTool key={`measure-${measureKey}`} onUpdate={setMeasureResult} />}
+            {isMeasuring && <MeasureAreaTool key={`measure-${measureKey}`} onUpdate={setMeasureResult} mode={measureMode} />}
 
             {selectedFeature && (
               <SafeGeoJSON key={`highlight-${highlightKey}`} data={selectedFeature} style={() => highlightStyle} onEachFeature={() => {}}
@@ -2387,47 +2491,80 @@ const TaxMapView = forwardRef(({}, ref) => {
 
           {/* Measuring Mode Dialog */}
           {isMeasuring && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[800] bg-rose-50 border border-rose-300 rounded-2xl shadow-xl px-5 py-3.5 flex flex-wrap items-center gap-3 animate-fade-in max-w-xl">
-              <span className="text-rose-500 text-xl">📐</span>
-              <div className="min-w-[120px]">
-                {measureResult?.closed ? (
-                  <>
-                    <p className="text-sm font-extrabold text-rose-800 font-mono leading-tight">{measureResult.areaStr} ไร่</p>
-                    <p className="text-[10px] text-rose-600 font-semibold">{Number(measureResult.sqm).toLocaleString('th-TH')} ตร.ม.</p>
-                  </>
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[800] bg-white border border-gray-200 rounded-2xl shadow-xl px-4 py-3 flex flex-wrap items-center gap-2.5 animate-fade-in max-w-2xl">
+              {/* Mode toggle */}
+              <div className="flex rounded-xl overflow-hidden border border-gray-200 text-xs font-bold">
+                <button
+                  onClick={() => { setMeasureMode('area'); setMeasureKey((k) => k + 1); setMeasureResult(null); setMeasureNote(''); }}
+                  className={`px-3 py-1.5 transition-colors ${measureMode === 'area' ? 'bg-rose-500 text-white' : 'bg-white text-gray-500 hover:bg-rose-50'}`}
+                >
+                  📐 พื้นที่
+                </button>
+                <button
+                  onClick={() => { setMeasureMode('line'); setMeasureKey((k) => k + 1); setMeasureResult(null); setMeasureNote(''); }}
+                  className={`px-3 py-1.5 transition-colors ${measureMode === 'line' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-blue-50'}`}
+                >
+                  📏 ระยะทาง
+                </button>
+              </div>
+
+              {/* Result display */}
+              <div className="min-w-[130px]">
+                {measureMode === 'area' ? (
+                  measureResult?.closed ? (
+                    <>
+                      <p className="text-sm font-extrabold text-rose-800 font-mono leading-tight">{measureResult.areaStr} ไร่</p>
+                      <p className="text-[10px] text-rose-600 font-semibold">{Number(measureResult.sqm).toLocaleString('th-TH')} ตร.ม.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs font-bold text-rose-700">
+                        {(measureResult?.pointCount || 0) >= 3 ? 'พร้อมคำนวณเนื้อที่' : 'วัดพื้นที่แปลง'}
+                      </p>
+                      <p className="text-[10px] text-rose-500 font-medium">
+                        {(measureResult?.pointCount || 0) >= 3 ? 'คลิกจุดแรก หรือ double-click เพื่อปิด' : 'คลิกวางจุดอย่างน้อย 3 จุด'}
+                      </p>
+                    </>
+                  )
                 ) : (
-                  <>
-                    <p className="text-xs font-bold text-rose-800">
-                      {(measureResult?.pointCount || 0) >= 3 ? 'พร้อมคำนวณเนื้อที่' : 'วัดระยะทาง / พื้นที่'}
-                    </p>
-                    <p className="text-[10px] text-rose-600 font-medium">
-                      {(measureResult?.pointCount || 0) >= 3 ? 'คลิกจุดแรกเพื่อคำนวณพื้นที่' : 'วางจุดบนแผนที่อย่างน้อย 3 จุด'}
-                    </p>
-                  </>
+                  measureResult?.distanceM > 0 ? (
+                    <>
+                      <p className="text-sm font-extrabold text-blue-800 font-mono leading-tight">{formatDistance(measureResult.distanceM)}</p>
+                      <p className="text-[10px] text-blue-600 font-semibold">{(measureResult?.pointCount || 0)} จุด{measureResult?.done ? ' · เสร็จแล้ว' : ''}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs font-bold text-blue-700">วัดระยะทางเส้น</p>
+                      <p className="text-[10px] text-blue-500 font-medium">คลิกวางจุด · double-click เพื่อจบ</p>
+                    </>
+                  )
                 )}
               </div>
-              {measureResult?.closed && (
+
+              {/* Save (area mode only) */}
+              {measureMode === 'area' && measureResult?.closed && (
                 <>
                   <input
                     type="text"
                     placeholder="หมายเหตุ (ถ้ามี)"
                     value={measureNote}
                     onChange={(e) => setMeasureNote(e.target.value)}
-                    className="input input-bordered input-sm text-xs font-semibold w-36 focus:outline-none"
+                    className="input input-bordered input-sm text-xs font-semibold w-32 focus:outline-none"
                   />
                   <button
                     onClick={saveMeasurement}
                     disabled={measureSaving}
                     className="btn btn-success btn-sm text-white font-bold shadow-sm"
                   >
-                    บันทึกการวัด
+                    บันทึก
                   </button>
                 </>
               )}
-              <button onClick={() => { setMeasureKey((k) => k + 1); setMeasureResult(null); setMeasureNote(''); }} className="btn btn-outline btn-sm font-bold">
+
+              <button onClick={() => { setMeasureKey((k) => k + 1); setMeasureResult(null); setMeasureNote(''); }} className="btn btn-outline btn-sm font-bold text-xs">
                 ล้างจุด
               </button>
-              <button onClick={() => { setIsMeasuring(false); setMeasureResult(null); setMeasureNote(''); }} className="btn btn-ghost btn-sm text-gray-500 font-bold">
+              <button onClick={() => { setIsMeasuring(false); setMeasureResult(null); setMeasureNote(''); }} className="btn btn-ghost btn-sm text-gray-500 font-bold text-xs">
                 ปิด
               </button>
             </div>
