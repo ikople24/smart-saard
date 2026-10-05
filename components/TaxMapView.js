@@ -320,7 +320,6 @@ const MeasureAreaTool = ({ onUpdate, mode = 'area' }) => {
           fillOpacity: 1, weight: 2,
         }).addTo(lg);
         if (i > 0) {
-          const segDist = geodesicDistance(pts.slice(0, i + 1));
           const midLat = (pts[i - 1].lat + p.lat) / 2;
           const midLng = (pts[i - 1].lng + p.lng) / 2;
           const segOnly = geodesicDistance([pts[i - 1], p]);
